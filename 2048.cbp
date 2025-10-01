@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<CodeBlocks_project_file>
+	<FileVersion major="1" minor="6" />
+	<Project>
+		<Option title="2048" />
+		<Option pch_mode="2" />
+		<Option compiler="gcc" />
+		<Build>
+			<Target title="Debug">
+				<Option output="bin/Debug/2048" prefix_auto="1" extension_auto="1" />
+				<Option working_dir="$(PROJECT_DIR)" />
+				<Option object_output="obj/Debug/" />
+				<Option type="1" />
+				<Option compiler="gcc" />
+				<Compiler>
+					<Add option="-std=c++17" />
+					<Add option="-g" />
+					<Add directory="C:/Users/Chloe/Downloads/SDL3-3.2.22/x86_64-w64-mingw32/include" />
+				</Compiler>
+				<Linker>
+					<Add library="C:/Users/Chloe/Downloads/SDL3-3.2.22/x86_64-w64-mingw32/lib/libSDL3.dll.a" />
+					<Add directory="C:/Users/Chloe/Downloads/SDL3-3.2.22/x86_64-w64-mingw32/lib" />
+				</Linker>
+			</Target>
+			<Target title="Release">
+				<Option output="bin/Release/2048" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/Release/" />
+				<Option type="1" />
+				<Option compiler="gcc" />
+				<Compiler>
+					<Add option="-O2" />
+					<Add option="-std=c++17" />
+				</Compiler>
+				<Linker>
+					<Add option="-s" />
+				</Linker>
+			</Target>
+		</Build>
+		<Compiler>
+			<Add option="-Wall" />
+			<Add option="-std=c++17" />
+			<Add option="-fexceptions" />
+			<Add directory="C:/Users/Chloe/Downloads/SDL3-3.2.22/x86_64-w64-mingw32/include" />
+			<Add directory="C:/Users/Chloe/Downloads/SDL3_image-3.2.4/x86_64-w64-mingw32/include" />
+			<Add directory="C:/Users/Chloe/Downloads/SDL3_ttf-3.2.2/x86_64-w64-mingw32/include" />
+		</Compiler>
+		<Linker>
+			<Add library="C:/Users/Chloe/Downloads/SDL3-3.2.22/x86_64-w64-mingw32/lib/libSDL3.dll.a" />
+			<Add library="C:/Users/Chloe/Downloads/SDL3-3.2.22/x86_64-w64-mingw32/lib/libSDL3_image.dll.a" />
+			<Add library="C:/Users/Chloe/Downloads/SDL3_ttf-3.2.2/x86_64-w64-mingw32/lib/libSDL3_ttf.dll.a" />
+			<Add directory="C:/Users/Chloe/Downloads/SDL3-3.2.22/x86_64-w64-mingw32/lib" />
+			<Add directory="C:/Users/Chloe/Downloads/SDL3_image-3.2.4/x86_64-w64-mingw32/lib" />
+			<Add directory="C:/Users/Chloe/Downloads/SDL3_ttf-3.2.2/x86_64-w64-mingw32/lib" />
+		</Linker>
+		<Unit filename="main.cpp" />
+		<Extensions>
+			<lib_finder disable_auto="1" />
+		</Extensions>
+	</Project>
+</CodeBlocks_project_file>
