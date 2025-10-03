@@ -4,6 +4,22 @@
 #include <SDL3_ttf/SDL_ttf.h>
 #include <iostream>
 
+void renderTextCentered(SDL_Renderer* renderer, const std::string& text, int x, int y, TTF_Font* currentFont, SDL_Color color) {
+    if (text.empty() || !currentFont) return;
+
+    SDL_Surface* surface = TTF_RenderText_Blended(currentFont, text.c_str(), text.length(), color);
+    if (!surface) return;
+    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+    if (!texture) {
+        SDL_DestroySurface(surface);
+        return;
+    }
+    SDL_FRect destRect = { (float)(x - surface->w / 2), (float)(y - surface->h / 2), (float)surface->w, (float)surface->h };
+    SDL_RenderTexture(renderer, texture, nullptr, &destRect);
+    SDL_DestroySurface(surface);
+    SDL_DestroyTexture(texture);
+}
+
 int main(int argc, char* argv[]) {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         std::cout << "SDL_Init failed: " << SDL_GetError() << "\n";
@@ -16,7 +32,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    SDL_Window* window = SDL_CreateWindow("2048 UET", 800, 600, 0);
+    SDL_Window* window = SDL_CreateWindow("UET_RUN", 800, 600, 0);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
 
     if (!renderer) {
@@ -37,6 +53,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    TTF_Font* font = TTF_OpenFont("NotoSans-Regular.ttf", 16);
+    if (!font) {
+        std::cout << "Failed to load fonts: " << SDL_GetError() << std::endl;
+    }
+
     float logoW, logoH;
     SDL_GetTextureSize(logo, &logoW, &logoH);
 
@@ -46,11 +67,16 @@ int main(int argc, char* argv[]) {
     SDL_Event e;
     Uint8 alpha = 0;
     bool shrinking = false;
+    Uint32 startTime = SDL_GetTicks();
 
     while (running) {
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_EVENT_QUIT) running = false;
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) running = false;
+        }
+
+        if (SDL_GetTicks() - startTime > 3000) {
+            running = false;
         }
 
         // Bầu trời trắng
@@ -82,6 +108,13 @@ int main(int argc, char* argv[]) {
         SDL_RenderPresent(renderer);
         SDL_Delay(16);
     }
+
+    renderTextCentered(renderer, "Game", 400, 300, font, {255, 0, 0, 255});
+    SDL_FRect border = {360, 260, 80, 60};
+    SDL_SetRenderDrawColor(renderer, 200, 200, 0, 255);
+    SDL_RenderRect(renderer, &border);
+    SDL_RenderPresent(renderer);
+    SDL_Delay(10000);
 
     SDL_DestroyTexture(logo);
     SDL_DestroyRenderer(renderer);
