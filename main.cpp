@@ -5,7 +5,6 @@
 #include <iostream>
 
 int main(int argc, char* argv[]) {
-    // Init SDL
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         std::cout << "SDL_Init failed: " << SDL_GetError() << "\n";
         return 1;
@@ -28,7 +27,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Load logo (PNG tự động hỗ trợ, không cần IMG_Init)
     SDL_Texture* logo = IMG_LoadTexture(renderer, "Assets/uet.png");
     if (!logo) {
         std::cout << "Load image failed: " << SDL_GetError() << "\n";
@@ -42,12 +40,11 @@ int main(int argc, char* argv[]) {
     float logoW, logoH;
     SDL_GetTextureSize(logo, &logoW, &logoH);
 
-    // Vị trí ban đầu (giữa màn hình)
-    SDL_FRect logoRect = {400 - logoW / 2, 300 - logoH / 2, logoW, logoH};
+    SDL_FRect logoRect = {200, 100, 400, 400};
 
     bool running = true;
     SDL_Event e;
-    Uint8 alpha = 0;   // fade-in
+    Uint8 alpha = 0;
     bool shrinking = false;
 
     while (running) {
@@ -56,37 +53,36 @@ int main(int argc, char* argv[]) {
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) running = false;
         }
 
-        // Nền xanh trời + mặt đất trắng
-        SDL_SetRenderDrawColor(renderer, 135, 206, 235, 255);
+        // Bầu trời trắng
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         SDL_RenderClear(renderer);
 
+        // Đất xanh dương pastel (light blue)
         SDL_FRect ground = {0, 500, 800, 100};
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        SDL_SetRenderDrawColor(renderer, 173, 216, 230, 255);
         SDL_RenderFillRect(renderer, &ground);
 
-        // Fade in
+        // Hiệu ứng fade-in logo
         if (alpha < 255 && !shrinking) {
-            alpha += 3;
+            alpha = (Uint8)SDL_min(alpha + 3, 255);
             SDL_SetTextureAlphaMod(logo, alpha);
         }
 
-        // Sau khi fade-in xong, thu nhỏ logo
         if (alpha >= 255) {
             shrinking = true;
         }
         if (shrinking && logoRect.w > 100) {
             logoRect.w *= 0.98f;
             logoRect.h *= 0.98f;
-            logoRect.x = 20; // dịch sang trái
-            logoRect.y = 20; // dịch lên trên
+            logoRect.x = 20;
+            logoRect.y = 20;
         }
 
         SDL_RenderTexture(renderer, logo, nullptr, &logoRect);
         SDL_RenderPresent(renderer);
-        SDL_Delay(16); // ~60fps
+        SDL_Delay(16);
     }
 
-    // Cleanup
     SDL_DestroyTexture(logo);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
