@@ -11,19 +11,14 @@ struct Button {
     SDL_FRect rect;
 };
 
-void renderRoundedButton(SDL_Renderer* renderer, const Button& btn, TTF_Font* font, SDL_Color borderColor, SDL_Color textColor) {
-    // Bóng đổ nhẹ
-    SDL_SetRenderDrawColor(renderer, 180, 180, 180, 100);
-    SDL_FRect shadow = {btn.rect.x + 4, btn.rect.y + 4, btn.rect.w, btn.rect.h};
-    SDL_RenderFillRect(renderer, &shadow);
-
-    // Nền trắng
-    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-    SDL_RenderFillRect(renderer, &btn.rect);
+void renderRoundedButton(SDL_Renderer* renderer, const Button& btn,
+                           TTF_Font* font, SDL_Texture* bgTexture, SDL_Color borderColor, SDL_Color textColor)
+{
+    // Vẽ ảnh nền nút (stretch cho vừa với rect)
+    SDL_RenderTexture(renderer, bgTexture, nullptr, &btn.rect);
 
     // Viền vàng nhạt
     SDL_SetRenderDrawColor(renderer, borderColor.r, borderColor.g, borderColor.b, borderColor.a);
-    SDL_RenderRect(renderer, &btn.rect);
 
     // Hiển thị chữ
     SDL_Surface* surface = TTF_RenderText_Blended(font, btn.text.c_str(), btn.text.length(), textColor);
@@ -62,6 +57,12 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    SDL_Texture* buttonTexture = IMG_LoadTexture(renderer, "Assets/button.png");
+    if (!buttonTexture) {
+        std::cout << "Failed to load button image: " << SDL_GetError() << "\n";
+        return 1;
+    }
+
     TTF_Font* font = TTF_OpenFont("NotoSans-Regular.ttf", 36);
     if (!font) {
         std::cout << "Failed to load font: " << SDL_GetError() << "\n";
@@ -77,13 +78,13 @@ int main(int argc, char* argv[]) {
     SDL_Event e;
 
     std::vector<Button> buttons = {
-        {"Play",   {300, 250, 200, 60}},
-        {"Resume", {300, 330, 200, 60}},
-        {"Score",  {300, 410, 200, 60}}
+        {"Play",   {300, 200, 180, 80}},
+        {"Resume", {300, 300, 180, 80}},
+        {"Score",  {300, 400, 180, 80}}
     };
 
     SDL_Color borderColor = {255, 215, 0, 255}; // vàng nhạt
-    SDL_Color textColor   = {0, 0, 0, 255};     // chữ đen
+    SDL_Color textColor   = {255, 255, 255, 255};     // chữ đen
 
     while (running) {
         while (SDL_PollEvent(&e)) {
@@ -126,7 +127,7 @@ int main(int argc, char* argv[]) {
         // Sau 4 giây: hiện menu đẹp
         if (SDL_GetTicks() - startTime > 4000) {
             for (auto& b : buttons) {
-                renderRoundedButton(renderer, b, font, borderColor, textColor);
+                renderRoundedButton(renderer, b, font, buttonTexture, borderColor, textColor);
             }
         }
 
