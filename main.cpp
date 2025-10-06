@@ -3,19 +3,41 @@
 #include <SDL3_image/SDL_image.h>
 #include <SDL3_ttf/SDL_ttf.h>
 #include <iostream>
+#include <vector>
+#include <string>
 
-void renderTextCentered(SDL_Renderer* renderer, const std::string& text, int x, int y, TTF_Font* currentFont, SDL_Color color) {
-    if (text.empty() || !currentFont) return;
+struct Button {
+    std::string text;
+    SDL_FRect rect;
+};
 
-    SDL_Surface* surface = TTF_RenderText_Blended(currentFont, text.c_str(), text.length(), color);
+void renderRoundedButton(SDL_Renderer* renderer, const Button& btn, TTF_Font* font, SDL_Color borderColor, SDL_Color textColor) {
+    // Bóng đổ nhẹ
+    SDL_SetRenderDrawColor(renderer, 180, 180, 180, 100);
+    SDL_FRect shadow = {btn.rect.x + 4, btn.rect.y + 4, btn.rect.w, btn.rect.h};
+    SDL_RenderFillRect(renderer, &shadow);
+
+    // Nền trắng
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    SDL_RenderFillRect(renderer, &btn.rect);
+
+    // Viền vàng nhạt
+    SDL_SetRenderDrawColor(renderer, borderColor.r, borderColor.g, borderColor.b, borderColor.a);
+    SDL_RenderRect(renderer, &btn.rect);
+
+    // Hiển thị chữ
+    SDL_Surface* surface = TTF_RenderText_Blended(font, btn.text.c_str(), btn.text.length(), textColor);
     if (!surface) return;
     SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
-    if (!texture) {
-        SDL_DestroySurface(surface);
-        return;
-    }
-    SDL_FRect destRect = { (float)(x - surface->w / 2), (float)(y - surface->h / 2), (float)surface->w, (float)surface->h };
-    SDL_RenderTexture(renderer, texture, nullptr, &destRect);
+
+    SDL_FRect textRect = {
+        btn.rect.x + (btn.rect.w - surface->w) / 2.0f,
+        btn.rect.y + (btn.rect.h - surface->h) / 2.0f,
+        (float)surface->w,
+        (float)surface->h
+    };
+
+    SDL_RenderTexture(renderer, texture, nullptr, &textRect);
     SDL_DestroySurface(surface);
     SDL_DestroyTexture(texture);
 }
@@ -25,7 +47,6 @@ int main(int argc, char* argv[]) {
         std::cout << "SDL_Init failed: " << SDL_GetError() << "\n";
         return 1;
     }
-
     if (!TTF_Init()) {
         std::cout << "TTF_Init failed: " << SDL_GetError() << "\n";
         SDL_Quit();
@@ -35,55 +56,46 @@ int main(int argc, char* argv[]) {
     SDL_Window* window = SDL_CreateWindow("UET_RUN", 800, 600, 0);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
 
-    if (!renderer) {
-        std::cout << "SDL_CreateRenderer failed: " << SDL_GetError() << "\n";
-        SDL_DestroyWindow(window);
-        TTF_Quit();
-        SDL_Quit();
-        return 1;
-    }
-
     SDL_Texture* logo = IMG_LoadTexture(renderer, "Assets/uet.png");
     if (!logo) {
         std::cout << "Load image failed: " << SDL_GetError() << "\n";
-        SDL_DestroyRenderer(renderer);
-        SDL_DestroyWindow(window);
-        TTF_Quit();
-        SDL_Quit();
         return 1;
     }
 
-    TTF_Font* font = TTF_OpenFont("NotoSans-Regular.ttf", 16);
+    TTF_Font* font = TTF_OpenFont("NotoSans-Regular.ttf", 36);
     if (!font) {
-        std::cout << "Failed to load fonts: " << SDL_GetError() << std::endl;
+        std::cout << "Failed to load font: " << SDL_GetError() << "\n";
+        return 1;
     }
 
-    float logoW, logoH;
-    SDL_GetTextureSize(logo, &logoW, &logoH);
-
     SDL_FRect logoRect = {200, 100, 400, 400};
-
-    bool running = true;
-    SDL_Event e;
     Uint8 alpha = 0;
     bool shrinking = false;
     Uint32 startTime = SDL_GetTicks();
 
+    bool running = true;
+    SDL_Event e;
+
+    std::vector<Button> buttons = {
+        {"Play",   {300, 250, 200, 60}},
+        {"Resume", {300, 330, 200, 60}},
+        {"Score",  {300, 410, 200, 60}}
+    };
+
+    SDL_Color borderColor = {255, 215, 0, 255}; // vàng nhạt
+    SDL_Color textColor   = {0, 0, 0, 255};     // chữ đen
+
     while (running) {
         while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_EVENT_QUIT) running = false;
-            if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) running = false;
-        }
-
-        if (SDL_GetTicks() - startTime > 3000) {
-            running = false;
+            if (e.type == SDL_EVENT_QUIT || (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE))
+                running = false;
         }
 
         // Bầu trời trắng
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         SDL_RenderClear(renderer);
 
-        // Đất xanh dương pastel (light blue)
+        // Nền đất xanh dương nhạt
         SDL_FRect ground = {0, 500, 800, 100};
         SDL_SetRenderDrawColor(renderer, 173, 216, 230, 255);
         SDL_RenderFillRect(renderer, &ground);
@@ -92,30 +104,37 @@ int main(int argc, char* argv[]) {
         if (alpha < 255 && !shrinking) {
             alpha = (Uint8)SDL_min(alpha + 3, 255);
             SDL_SetTextureAlphaMod(logo, alpha);
-        }
-
-        if (alpha >= 255) {
+        } else {
             shrinking = true;
         }
-        if (shrinking && logoRect.w > 100) {
-            logoRect.w *= 0.98f;
-            logoRect.h *= 0.98f;
-            logoRect.x = 20;
-            logoRect.y = 20;
+
+        // Thu nhỏ rồi trượt về góc trái
+        if (shrinking) {
+            if (logoRect.w > 100) {
+                logoRect.w *= 0.98f;
+                logoRect.h *= 0.98f;
+                logoRect.x = (800 - logoRect.w) / 2;
+                logoRect.y = (600 - logoRect.h) / 2;
+            } else {
+                logoRect.x -= (logoRect.x - 20) * 0.1f;
+                logoRect.y -= (logoRect.y - 20) * 0.1f;
+            }
         }
 
         SDL_RenderTexture(renderer, logo, nullptr, &logoRect);
+
+        // Sau 4 giây: hiện menu đẹp
+        if (SDL_GetTicks() - startTime > 4000) {
+            for (auto& b : buttons) {
+                renderRoundedButton(renderer, b, font, borderColor, textColor);
+            }
+        }
+
         SDL_RenderPresent(renderer);
         SDL_Delay(16);
     }
 
-    renderTextCentered(renderer, "Game", 400, 300, font, {255, 0, 0, 255});
-    SDL_FRect border = {360, 260, 80, 60};
-    SDL_SetRenderDrawColor(renderer, 200, 200, 0, 255);
-    SDL_RenderRect(renderer, &border);
-    SDL_RenderPresent(renderer);
-    SDL_Delay(10000);
-
+    TTF_CloseFont(font);
     SDL_DestroyTexture(logo);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
