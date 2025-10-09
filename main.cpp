@@ -22,7 +22,7 @@ struct Player {
     bool onGround;
     SDL_Color color;
 
-    Player() : rect{375, 400, 50, 60}, velocityX(0), velocityY(0),
+    Player() : rect{375, 400, 100, 120}, velocityX(0), velocityY(0),
                isJumping(false), onGround(false),
                color{255, 100, 100, 255} {}
 };
@@ -32,12 +32,14 @@ SDL_Renderer* g_renderer = nullptr;
 TTF_Font* g_font = nullptr;
 SDL_Texture* g_logoTexture = nullptr;
 SDL_Texture* g_buttonTexture = nullptr;
+SDL_Texture* g_player = nullptr;
+
 SDL_FRect g_logoRect = {200, 100, 400, 400};
 Uint8 g_alpha = 0;
 bool g_shrinking = false;
 Uint32 g_startTime = 0;
 Scene g_currentScene = Scene::MENU;
-Player g_player;
+Player player;
 
 // Các hằng số vật lý
 const float GRAVITY = 0.8f;
@@ -91,58 +93,34 @@ bool checkCollision(float x, float y, const SDL_FRect& rect) {
 // Hàm cập nhật vật lý cho nhân vật
 void updatePlayer() {
     // Áp dụng trọng lực
-    g_player.velocityY += GRAVITY;
+    player.velocityY += GRAVITY;
 
     // Cập nhật vị trí
-    g_player.rect.x += g_player.velocityX;
-    g_player.rect.y += g_player.velocityY;
+    player.rect.x += player.velocityX;
+    player.rect.y += player.velocityY;
 
     // Kiểm tra va chạm với mặt đất
-    if (g_player.rect.y + g_player.rect.h >= GROUND_Y) {
-        g_player.rect.y = GROUND_Y - g_player.rect.h;
-        g_player.velocityY = 0;
-        g_player.onGround = true;
-        g_player.isJumping = false;
+    if (player.rect.y + player.rect.h >= GROUND_Y) {
+        player.rect.y = GROUND_Y - player.rect.h;
+        player.velocityY = 0;
+        player.onGround = true;
+        player.isJumping = false;
     } else {
-        g_player.onGround = false;
+        player.onGround = false;
     }
 
     // Giới hạn trong màn hình
-    if (g_player.rect.x < 0) {
-        g_player.rect.x = 0;
-        g_player.velocityX = 0;
+    if (player.rect.x < 0) {
+        player.rect.x = 0;
+        player.velocityX = 0;
     }
-    if (g_player.rect.x + g_player.rect.w > 800) {
-        g_player.rect.x = 800 - g_player.rect.w;
-        g_player.velocityX = 0;
+    if (player.rect.x + player.rect.w > 800) {
+        player.rect.x = 800 - player.rect.w;
+        player.velocityX = 0;
     }
 
     // Giảm tốc độ di chuyển ngang (ma sát)
-    g_player.velocityX *= 0.9f;
-}
-
-// Hàm vẽ nhân vật
-void renderPlayer() {
-    // Vẽ thân nhân vật
-    SDL_SetRenderDrawColor(g_renderer, g_player.color.r, g_player.color.g, g_player.color.b, g_player.color.a);
-    SDL_RenderFillRect(g_renderer, &g_player.rect);
-
-    // Vẽ đầu nhân vật (hình tròn đơn giản hóa thành hình vuông)
-    SDL_FRect head = {
-        g_player.rect.x + 10,
-        g_player.rect.y - 20,
-        30,
-        30
-    };
-    SDL_SetRenderDrawColor(g_renderer, 255, 200, 150, 255); // Màu da
-    SDL_RenderFillRect(g_renderer, &head);
-
-    // Vẽ mắt
-    SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
-    SDL_FRect leftEye = {head.x + 5, head.y + 8, 5, 5};
-    SDL_FRect rightEye = {head.x + 20, head.y + 8, 5, 5};
-    SDL_RenderFillRect(g_renderer, &leftEye);
-    SDL_RenderFillRect(g_renderer, &rightEye);
+    player.velocityX *= 0.9f;
 }
 
 void renderScenePlay() {
@@ -155,16 +133,10 @@ void renderScenePlay() {
     SDL_SetRenderDrawColor(g_renderer, 34, 139, 34, 255); // Forest green
     SDL_RenderFillRect(g_renderer, &ground);
 
-    // Vẽ một số cỏ
-    SDL_SetRenderDrawColor(g_renderer, 0, 100, 0, 255);
-    for (int i = 0; i < 800; i += 30) {
-        SDL_FRect grass = {(float)i, GROUND_Y - 10, 5, 10};
-        SDL_RenderFillRect(g_renderer, &grass);
-    }
-
     // Cập nhật và vẽ nhân vật
     updatePlayer();
-    renderPlayer();
+    // Vẽ nhân vật
+    SDL_RenderTexture(g_renderer, g_player, nullptr, &player.rect);
 
     // Hiển thị hướng dẫn
     SDL_Color textColor = {255, 255, 255, 255};
@@ -251,12 +223,12 @@ void renderSceneMenu(Uint32 currentTime) {
 
 // Hàm reset nhân vật khi vào scene Play
 void resetPlayer() {
-    g_player.rect.x = 375;
-    g_player.rect.y = 400;
-    g_player.velocityX = 0;
-    g_player.velocityY = 0;
-    g_player.isJumping = false;
-    g_player.onGround = false;
+    player.rect.x = 375;
+    player.rect.y = 400;
+    player.velocityX = 0;
+    player.velocityY = 0;
+    player.isJumping = false;
+    player.onGround = false;
 }
 
 int main(int argc, char* argv[]) {
@@ -282,6 +254,11 @@ int main(int argc, char* argv[]) {
 
     g_buttonTexture = IMG_LoadTexture(g_renderer, "Assets/button.png");
     if (!g_buttonTexture) {
+        std::cout << "Failed to load button image: " << SDL_GetError() << "\n";
+    }
+
+    g_player = IMG_LoadTexture(g_renderer, "Assets/player.png");
+    if (!g_player) {
         std::cout << "Failed to load button image: " << SDL_GetError() << "\n";
     }
 
@@ -314,10 +291,10 @@ int main(int argc, char* argv[]) {
                 }
                 // Xử lý nhảy trong scene Play
                 else if (g_currentScene == Scene::PLAY) {
-                    if ((e.key.key == SDLK_W || e.key.key == SDLK_SPACE) && g_player.onGround) {
-                        g_player.velocityY = JUMP_FORCE;
-                        g_player.isJumping = true;
-                        g_player.onGround = false;
+                    if ((e.key.key == SDLK_W || e.key.key == SDLK_SPACE) && player.onGround) {
+                        player.velocityY = JUMP_FORCE;
+                        player.isJumping = true;
+                        player.onGround = false;
                     }
                 }
             } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) {
@@ -345,10 +322,10 @@ int main(int argc, char* argv[]) {
         // Xử lý di chuyển liên tục trong scene Play
         if (g_currentScene == Scene::PLAY) {
             if (keystate[SDL_SCANCODE_A]) {
-                g_player.velocityX = -MOVE_SPEED;
+                player.velocityX = -MOVE_SPEED;
             }
             if (keystate[SDL_SCANCODE_D]) {
-                g_player.velocityX = MOVE_SPEED;
+                player.velocityX = MOVE_SPEED;
             }
         }
 
