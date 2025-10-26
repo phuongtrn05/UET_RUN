@@ -647,14 +647,14 @@ int main(int argc, char* argv[]) {
         }
 
         SDL_RenderPresent(g_renderer);
-        // Không cần SDL_Delay(16) vì đã có V-Sync
+
     }
 
     if (g_font) TTF_CloseFont(g_font);
     if (g_smallFont) TTF_CloseFont(g_smallFont);
     if (g_logoTexture) SDL_DestroyTexture(g_logoTexture);
     if (g_buttonTexture) SDL_DestroyTexture(g_buttonTexture);
-    if (g_player) SDL_DestroyTexture(g_player); // Sửa lỗi typo gD-player
+    if (g_player) SDL_DestroyTexture(g_player);
     if (g_renderer) SDL_DestroyRenderer(g_renderer);
     if (g_window) SDL_DestroyWindow(g_window);
 
