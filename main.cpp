@@ -5,7 +5,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
-#include <cmath> // Cần cho powf
+#include <cmath> // Cần cho powf và fmod
 #include <ctime> // Cần cho time()
 
 enum class Scene {
@@ -62,7 +62,7 @@ struct DamageItem {
         : rect{x, y, w, h}, color(c), isCollected(false) {}
 };
 
-// ✅ THÊM: Cấu trúc cho vật phẩm bí ẩn (Tím)
+// Cấu trúc cho vật phẩm bí ẩn (Tím)
 struct MysteryItem {
     SDL_FRect rect;
     SDL_Color color;
@@ -80,6 +80,9 @@ TTF_Font* g_smallFont = nullptr;
 SDL_Texture* g_logoTexture = nullptr;
 SDL_Texture* g_buttonTexture = nullptr;
 SDL_Texture* g_player = nullptr;
+SDL_Texture* g_backgroundTexture = nullptr; // Texture cho nền
+float g_bgWidth = 0.0f;                     // ✅ SỬA: Phải là float
+float g_bgHeight = 0.0f;                    // ✅ SỬA: Phải là float
 
 SDL_FRect g_logoRect = {200, 100, 400, 400};
 Uint8 g_alpha = 0;
@@ -100,7 +103,7 @@ const float BASE_MOVE_SPEED = 5.0f * 60.0f;
 float g_moveSpeed = BASE_MOVE_SPEED;
 const float EPSILON = 0.01f;
 
-const float GROUND_Y = 460.0f;
+const float GROUND_Y = 460.0f; // Đảm bảo giá trị này khớp với mặt đất trong ảnh background.png
 const float TRACK_LENGTH = 10000.0f;
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 600;
@@ -109,13 +112,15 @@ const int SCREEN_HEIGHT = 600;
 std::vector<Obstacle> g_obstacles;
 std::vector<Collectible> g_collectibles;
 std::vector<DamageItem> g_damageItems;
-std::vector<MysteryItem> g_mysteryItems; // ✅ THÊM: Danh sách vật phẩm tím
+std::vector<MysteryItem> g_mysteryItems;
 
 int g_score = 0;
 int g_level = 1;
 int g_itemCount = 0;
+int g_totalItemCount = 0;
 const int ITEMS_PER_LEVEL = 10;
 Uint32 g_gameStartTime = 0;
+Uint32 g_playTimeSeconds = 0;
 
 struct Button {
     std::string text;
@@ -188,16 +193,14 @@ void createDamageItems() {
     }
 }
 
-// ✅ THÊM: Hàm tạo vật phẩm (Tím - Bí ẩn)
+// Hàm tạo vật phẩm (Tím - Bí ẩn)
 void createMysteryItems() {
     g_mysteryItems.clear();
-    // Spawn rất hiếm
-    for (float x = 2000; x < TRACK_LENGTH; x += 1500 + (rand() % 1000)) {
-        float yPos = (rand() % 2 == 0) ? (GROUND_Y - 40) : (GROUND_Y - 170); // Có thể ở cao hơn
+    // Đặt ở 700 để test
+    for (float x = 700; x < TRACK_LENGTH; x += 1500 + (rand() % 1000)) {
+        float yPos = (rand() % 2 == 0) ? (GROUND_Y - 40) : (GROUND_Y - 170);
         SDL_FRect newItemRect = {x, yPos, 30, 30};
-
         bool isOverlapping = false;
-        // Kiểm tra đè 3 loại kia
         for (const auto& obs : g_obstacles) {
             if (checkRectCollision(newItemRect, obs.rect)) { isOverlapping = true; break; }
         }
@@ -210,15 +213,14 @@ void createMysteryItems() {
             if (checkRectCollision(newItemRect, item.rect)) { isOverlapping = true; break; }
         }
         if (isOverlapping) continue;
-
-        g_mysteryItems.push_back(MysteryItem(x, yPos, 30, 30, {128, 0, 128, 255})); // Màu tím
+        g_mysteryItems.push_back(MysteryItem(x, yPos, 30, 30, {128, 0, 128, 255}));
     }
 }
 
 
 // Hàm vẽ nút
 void renderRoundedButton(SDL_Renderer* renderer, const Button& btn,
-                         TTF_Font* font, SDL_Texture* bgTexture, SDL_Color borderColor, SDL_Color textColor)
+                       TTF_Font* font, SDL_Texture* bgTexture, SDL_Color borderColor, SDL_Color textColor)
 {
     if (!renderer || !font || !bgTexture) return;
     SDL_RenderTexture(renderer, bgTexture, nullptr, &btn.rect);
@@ -320,6 +322,7 @@ void updatePlayer(float dt, bool isInputActive) {
         if (!item.isCollected && checkRectCollision(player.rect, item.rect)) {
             item.isCollected = true;
             g_itemCount++;
+            g_totalItemCount++; // Cập nhật tổng
             g_score += 5;
             if (g_itemCount >= ITEMS_PER_LEVEL) {
                 g_level++;
@@ -341,25 +344,22 @@ void updatePlayer(float dt, bool isInputActive) {
             }
         }
     }
-
-    // ✅ THÊM: Va chạm vật phẩm (Tím - Bí ẩn)
+    // Va chạm vật phẩm (Tím)
     for (auto& item : g_mysteryItems) {
         if (!item.isCollected && checkRectCollision(player.rect, item.rect)) {
             item.isCollected = true;
-            int effect = rand() % 3; // Ngẫu nhiên 0, 1, hoặc 2
-
+            int effect = rand() % 3;
             switch (effect) {
-                case 0: // Hồi HP
+                case 0:
                     player.hp += 20;
-                    if (player.hp > 100) player.hp = 100; // Không cho vượt quá 100
+                    if (player.hp > 100) player.hp = 100;
                     std::cout << "MYSTERY: HP Healed! HP: " << player.hp << std::endl;
                     break;
-
-                case 1: // Cộng vật phẩm
+                case 1:
                     g_itemCount++;
-                    g_score += 20; // Thưởng thêm điểm
+                    g_totalItemCount++; // Cập nhật tổng
+                    g_score += 20;
                     std::cout << "MYSTERY: Bonus Item! Score: " << g_score << std::endl;
-                    // Phải kiểm tra level up ở đây
                     if (g_itemCount >= ITEMS_PER_LEVEL) {
                         g_level++;
                         g_itemCount = 0;
@@ -367,11 +367,9 @@ void updatePlayer(float dt, bool isInputActive) {
                         std::cout << "LEVEL UP! Level: " << g_level << ", New Speed: " << g_moveSpeed << std::endl;
                     }
                     break;
-
-                case 2: // Trừ HP
+                case 2:
                     player.hp -= 20;
                     std::cout << "MYSTERY: Ouch! HP: " << player.hp << std::endl;
-                    // Phải kiểm tra game over ở đây
                     if (player.hp <= 0) {
                         std::cout << "GAME OVER!" << std::endl;
                         g_currentScene = Scene::GAME_OVER;
@@ -380,7 +378,6 @@ void updatePlayer(float dt, bool isInputActive) {
             }
         }
     }
-
 
     // Cập nhật camera
     g_cameraX = player.rect.x - 200;
@@ -395,20 +392,34 @@ void updatePlayer(float dt, bool isInputActive) {
     }
 }
 
-// HÀM renderScenePlay
+// HÀM renderScenePlay (ĐÃ CẬP NHẬT VỚI NỀN LẶP)
 void renderScenePlay(float dt) {
-    // Vẽ nền
-    SDL_SetRenderDrawColor(g_renderer, 135, 206, 250, 255);
+    // 1. Xóa màn hình
+    SDL_SetRenderDrawColor(g_renderer, 135, 206, 250, 255); // Màu trời dự phòng
     SDL_RenderClear(g_renderer);
-    SDL_FRect ground = {-g_cameraX, GROUND_Y, TRACK_LENGTH, 140};
-    SDL_SetRenderDrawColor(g_renderer, 34, 139, 34, 255);
-    SDL_RenderFillRect(g_renderer, &ground);
-    SDL_SetRenderDrawColor(g_renderer, 255, 255, 255, 255);
-    for (float x = 0; x < TRACK_LENGTH; x += 100) {
-        SDL_FRect line = {x - g_cameraX, GROUND_Y + 60, 50, 5};
-        SDL_RenderFillRect(g_renderer, &line);
+
+    // 2. Vẽ nền lặp lại (kiểu Mario)
+    if (g_backgroundTexture && g_bgWidth > 0 && g_bgHeight > 0) {
+        // Tốc độ cuộn của nền (0.5f = 50% tốc độ camera, tạo hiệu ứng parallax)
+        float parallaxFactor = 0.5f;
+
+        // Tính toán tỷ lệ scale để ảnh nền vừa với chiều cao màn hình
+        float scale = (float)SCREEN_HEIGHT / (float)g_bgHeight;
+        float scaledWidth = (float)g_bgWidth * scale;
+
+        // Tính toán vị trí offset lặp lại dựa trên camera và parallax
+        // fmod đảm bảo giá trị luôn trong khoảng [0, scaledWidth]
+        float bgOffset = fmod(g_cameraX * parallaxFactor, scaledWidth);
+
+        // Vẽ 2 bản copy của ảnh nền để lấp đầy màn hình khi cuộn
+        SDL_FRect destRect1 = { -bgOffset, 0, scaledWidth, (float)SCREEN_HEIGHT };
+        SDL_RenderTexture(g_renderer, g_backgroundTexture, nullptr, &destRect1);
+
+        SDL_FRect destRect2 = { -bgOffset + scaledWidth, 0, scaledWidth, (float)SCREEN_HEIGHT };
+        SDL_RenderTexture(g_renderer, g_backgroundTexture, nullptr, &destRect2);
     }
-    // Vẽ vật cản
+
+    // 3. Vẽ vật cản
     for (const auto& obs : g_obstacles) {
         SDL_FRect renderRect = {obs.rect.x - g_cameraX, obs.rect.y, obs.rect.w, obs.rect.h};
         SDL_SetRenderDrawColor(g_renderer, obs.color.r, obs.color.g, obs.color.b, obs.color.a);
@@ -416,7 +427,7 @@ void renderScenePlay(float dt) {
         SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
         SDL_RenderRect(g_renderer, &renderRect);
     }
-    // Vẽ vật phẩm (Vàng)
+    // 4. Vẽ vật phẩm (Vàng)
     for (const auto& item : g_collectibles) {
         if (!item.isCollected) {
             SDL_FRect renderRect = {item.rect.x - g_cameraX, item.rect.y, item.rect.w, item.rect.h};
@@ -426,7 +437,7 @@ void renderScenePlay(float dt) {
             SDL_RenderRect(g_renderer, &renderRect);
         }
     }
-    // Vẽ vật phẩm (Đỏ)
+    // 5. Vẽ vật phẩm (Đỏ)
     for (const auto& item : g_damageItems) {
         if (!item.isCollected) {
             SDL_FRect renderRect = {item.rect.x - g_cameraX, item.rect.y, item.rect.w, item.rect.h};
@@ -436,7 +447,7 @@ void renderScenePlay(float dt) {
             SDL_RenderRect(g_renderer, &renderRect);
         }
     }
-    // ✅ THÊM: Vẽ vật phẩm (Tím)
+    // 6. Vẽ vật phẩm (Tím)
     for (const auto& item : g_mysteryItems) {
         if (!item.isCollected) {
             SDL_FRect renderRect = {item.rect.x - g_cameraX, item.rect.y, item.rect.w, item.rect.h};
@@ -447,7 +458,7 @@ void renderScenePlay(float dt) {
         }
     }
 
-    // Input và Update
+    // 7. Input và Update
     const bool* keystate = SDL_GetKeyboardState(nullptr);
     bool isMovingLeft = keystate[SDL_SCANCODE_A];
     bool isMovingRight = keystate[SDL_SCANCODE_D];
@@ -455,44 +466,104 @@ void renderScenePlay(float dt) {
     else if (isMovingLeft) { player.velocityX = -g_moveSpeed; }
     updatePlayer(dt, isMovingLeft || isMovingRight);
 
-    // Vẽ nhân vật
+    // 8. Vẽ nhân vật
     SDL_FRect playerRenderRect = {
         player.rect.x - g_cameraX, player.rect.y, player.rect.w, player.rect.h
     };
     SDL_RenderTexture(g_renderer, g_player, nullptr, &playerRenderRect);
 
-    // --- Hiển thị thông tin (HUD) ---
+    // --- 9. HIỂN THỊ HUD KIỂU MARIO ---
     SDL_Color textColor = {255, 255, 255, 255};
     SDL_Surface* surface = nullptr;
     SDL_Texture* texture = nullptr;
     SDL_FRect textRect;
 
-    // HP
-    std::string hpText = "HP: " + std::to_string(player.hp);
+    // Vị trí X cho các cột
+    float col1_x = 50.0f;
+    float col2_x = 250.0f;
+    float col3_x = 450.0f;
+    float col4_x = 650.0f;
+
+    // --- Cột 1: UET & Vật phẩm ---
+    // Chữ "UET"
+    surface = TTF_RenderText_Blended(g_smallFont, "UET", 0, textColor);
+    if (surface) {
+        texture = SDL_CreateTextureFromSurface(g_renderer, surface);
+        textRect = {col1_x, 20.0f, (float)surface->w, (float)surface->h};
+        SDL_RenderTexture(g_renderer, texture, nullptr, &textRect);
+        SDL_DestroySurface(surface);
+        SDL_DestroyTexture(texture);
+    }
+    // Số vật phẩm
+    std::string itemsText = std::to_string(g_totalItemCount);
+    surface = TTF_RenderText_Blended(g_smallFont, itemsText.c_str(), itemsText.length(), textColor);
+    if (surface) {
+        texture = SDL_CreateTextureFromSurface(g_renderer, surface);
+        textRect = {col1_x, 50.0f, (float)surface->w, (float)surface->h};
+        SDL_RenderTexture(g_renderer, texture, nullptr, &textRect);
+        SDL_DestroySurface(surface);
+        SDL_DestroyTexture(texture);
+    }
+
+    // --- Cột 2: HP ---
+    // Chữ "HP"
+    surface = TTF_RenderText_Blended(g_smallFont, "HP", 0, textColor);
+    if (surface) {
+        texture = SDL_CreateTextureFromSurface(g_renderer, surface);
+        textRect = {col2_x, 20.0f, (float)surface->w, (float)surface->h};
+        SDL_RenderTexture(g_renderer, texture, nullptr, &textRect);
+        SDL_DestroySurface(surface);
+        SDL_DestroyTexture(texture);
+    }
+    // Số HP
+    std::string hpText = std::to_string(player.hp);
     surface = TTF_RenderText_Blended(g_smallFont, hpText.c_str(), hpText.length(), textColor);
     if (surface) {
         texture = SDL_CreateTextureFromSurface(g_renderer, surface);
-        textRect = {10, 10, (float)surface->w, (float)surface->h};
+        textRect = {col2_x, 50.0f, (float)surface->w, (float)surface->h};
         SDL_RenderTexture(g_renderer, texture, nullptr, &textRect);
         SDL_DestroySurface(surface);
         SDL_DestroyTexture(texture);
     }
-    // Level
-    std::string levelText = "Level: " + std::to_string(g_level);
+
+    // --- Cột 3: LEVEL ---
+    // Chữ "LEVEL"
+    surface = TTF_RenderText_Blended(g_smallFont, "LEVEL", 0, textColor);
+    if (surface) {
+        texture = SDL_CreateTextureFromSurface(g_renderer, surface);
+        textRect = {col3_x, 20.0f, (float)surface->w, (float)surface->h};
+        SDL_RenderTexture(g_renderer, texture, nullptr, &textRect);
+        SDL_DestroySurface(surface);
+        SDL_DestroyTexture(texture);
+    }
+    // Số Level
+    std::string levelText = std::to_string(g_level);
     surface = TTF_RenderText_Blended(g_smallFont, levelText.c_str(), levelText.length(), textColor);
     if (surface) {
         texture = SDL_CreateTextureFromSurface(g_renderer, surface);
-        textRect = {SCREEN_WIDTH - 10.0f - surface->w, 10.0f, (float)surface->w, (float)surface->h};
+        textRect = {col3_x, 50.0f, (float)surface->w, (float)surface->h};
         SDL_RenderTexture(g_renderer, texture, nullptr, &textRect);
         SDL_DestroySurface(surface);
         SDL_DestroyTexture(texture);
     }
-    // Vật phẩm
-    std::string itemText = "Items: " + std::to_string(g_itemCount) + "/" + std::to_string(ITEMS_PER_LEVEL);
-    surface = TTF_RenderText_Blended(g_smallFont, itemText.c_str(), itemText.length(), textColor);
+
+    // --- Cột 4: TIME ---
+    // Chữ "TIME"
+    surface = TTF_RenderText_Blended(g_smallFont, "TIME", 0, textColor);
     if (surface) {
         texture = SDL_CreateTextureFromSurface(g_renderer, surface);
-        textRect = {SCREEN_WIDTH - 10.0f - surface->w, 40.0f, (float)surface->w, (float)surface->h};
+        textRect = {col4_x, 20.0f, (float)surface->w, (float)surface->h};
+        SDL_RenderTexture(g_renderer, texture, nullptr, &textRect);
+        SDL_DestroySurface(surface);
+        SDL_DestroyTexture(texture);
+    }
+    // Số giây
+    g_playTimeSeconds = (SDL_GetTicks() - g_gameStartTime) / 1000;
+    std::string timeText = std::to_string(g_playTimeSeconds);
+    surface = TTF_RenderText_Blended(g_smallFont, timeText.c_str(), timeText.length(), textColor);
+    if (surface) {
+        texture = SDL_CreateTextureFromSurface(g_renderer, surface);
+        textRect = {col4_x, 50.0f, (float)surface->w, (float)surface->h};
         SDL_RenderTexture(g_renderer, texture, nullptr, &textRect);
         SDL_DestroySurface(surface);
         SDL_DestroyTexture(texture);
@@ -515,7 +586,8 @@ void renderSceneFinish() {
         SDL_DestroySurface(surface);
         SDL_DestroyTexture(texture);
     }
-    std::string scoreText = "Diem so: " + std::to_string(g_score);
+    // Hiển thị điểm (tổng vật phẩm)
+    std::string scoreText = "Vat pham: " + std::to_string(g_totalItemCount);
     surface = TTF_RenderText_Blended(g_font, scoreText.c_str(), scoreText.length(), textColor);
     if (surface) {
         texture = SDL_CreateTextureFromSurface(g_renderer, surface);
@@ -524,8 +596,8 @@ void renderSceneFinish() {
         SDL_DestroySurface(surface);
         SDL_DestroyTexture(texture);
     }
-    Uint32 timeTaken = (SDL_GetTicks() - g_gameStartTime) / 1000;
-    std::string timeText = "Thoi gian: " + std::to_string(timeTaken) + "s";
+    // Hiển thị thời gian
+    std::string timeText = "Thoi gian: " + std::to_string(g_playTimeSeconds) + "s";
     surface = TTF_RenderText_Blended(g_smallFont, timeText.c_str(), timeText.length(), textColor);
     if (surface) {
         texture = SDL_CreateTextureFromSurface(g_renderer, surface);
@@ -546,9 +618,9 @@ void renderSceneFinish() {
 
 // Hàm render màn hình GAME OVER
 void renderSceneGameOver() {
-    SDL_SetRenderDrawColor(g_renderer, 139, 0, 0, 255); // Nền đỏ sẫm
+    SDL_SetRenderDrawColor(g_renderer, 139, 0, 0, 255);
     SDL_RenderClear(g_renderer);
-    SDL_Color textColor = {255, 255, 255, 255}; // Chữ trắng
+    SDL_Color textColor = {255, 255, 255, 255};
     SDL_Surface* surface = nullptr;
     SDL_Texture* texture = nullptr;
     SDL_FRect textRect;
@@ -560,7 +632,8 @@ void renderSceneGameOver() {
         SDL_DestroySurface(surface);
         SDL_DestroyTexture(texture);
     }
-    std::string scoreText = "Diem so: " + std::to_string(g_score);
+    // Hiển thị vật phẩm
+    std::string scoreText = "Vat pham: " + std::to_string(g_totalItemCount);
     surface = TTF_RenderText_Blended(g_smallFont, scoreText.c_str(), scoreText.length(), textColor);
     if (surface) {
         texture = SDL_CreateTextureFromSurface(g_renderer, surface);
@@ -579,7 +652,7 @@ void renderSceneGameOver() {
     }
 }
 
-
+// (Các hàm renderSceneResume, renderSceneScore, renderSceneMenu không đổi)
 void renderSceneResume() {
     SDL_SetRenderDrawColor(g_renderer, 150, 150, 255, 255);
     SDL_RenderClear(g_renderer);
@@ -636,7 +709,7 @@ void renderSceneMenu(Uint32 currentTime) {
     }
 }
 
-// HÀM resetPlayer
+// HÀM resetPlayer (Không đổi)
 void resetPlayer() {
     player.rect.x = 100;
     player.rect.y = 400;
@@ -650,12 +723,14 @@ void resetPlayer() {
     g_level = 1;
     g_moveSpeed = BASE_MOVE_SPEED;
     g_itemCount = 0;
+    g_totalItemCount = 0;
     g_gameStartTime = SDL_GetTicks();
+    g_playTimeSeconds = 0;
 
     createObstacles();
     createCollectibles();
     createDamageItems();
-    createMysteryItems(); // ✅ TẠO VẬT PHẨM TÍM
+    createMysteryItems();
 }
 
 // HÀM main()
@@ -679,6 +754,15 @@ int main(int argc, char* argv[]) {
     g_logoTexture = IMG_LoadTexture(g_renderer, "Assets/uet.png");
     g_buttonTexture = IMG_LoadTexture(g_renderer, "Assets/button.png");
     g_player = IMG_LoadTexture(g_renderer, "Assets/player.png");
+
+    // THÊM: Tải ảnh nền và lấy kích thước
+    g_backgroundTexture = IMG_LoadTexture(g_renderer, "Assets/background.png");
+    if (g_backgroundTexture) {
+        SDL_GetTextureSize(g_backgroundTexture, &g_bgWidth, &g_bgHeight); // Dòng này giờ đã đúng
+    } else {
+        std::cout << "Failed to load Assets/background.png: " << SDL_GetError() << "\n"; // ✅ SỬA LỖI
+    }
+
     g_font = TTF_OpenFont("NotoSans-Regular.ttf", 36);
     g_smallFont = TTF_OpenFont("NotoSans-Regular.ttf", 24);
 
@@ -747,6 +831,7 @@ int main(int argc, char* argv[]) {
     if (g_logoTexture) SDL_DestroyTexture(g_logoTexture);
     if (g_buttonTexture) SDL_DestroyTexture(g_buttonTexture);
     if (g_player) SDL_DestroyTexture(g_player);
+    if (g_backgroundTexture) SDL_DestroyTexture(g_backgroundTexture); // THÊM
     if (g_renderer) SDL_DestroyRenderer(g_renderer);
     if (g_window) SDL_DestroyWindow(g_window);
 
