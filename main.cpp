@@ -14,7 +14,7 @@ enum class Scene {
     RESUME,
     SCORE,
     FINISH,
-    GAME_OVER // ✅ THÊM: Màn hình Game Over
+    GAME_OVER
 };
 
 // Cấu trúc cho nhân vật
@@ -52,13 +52,23 @@ struct Collectible {
         : rect{x, y, w, h}, color(c), isCollected(false) {}
 };
 
-// ✅ THÊM: Cấu trúc cho vật phẩm gây sát thương (Đỏ)
+// Cấu trúc cho vật phẩm gây sát thương (Đỏ)
 struct DamageItem {
     SDL_FRect rect;
     SDL_Color color;
-    bool isCollected; // Dùng "isCollected" để đánh dấu đã va chạm
+    bool isCollected;
 
     DamageItem(float x, float y, float w, float h, SDL_Color c)
+        : rect{x, y, w, h}, color(c), isCollected(false) {}
+};
+
+// ✅ THÊM: Cấu trúc cho vật phẩm bí ẩn (Tím)
+struct MysteryItem {
+    SDL_FRect rect;
+    SDL_Color color;
+    bool isCollected;
+
+    MysteryItem(float x, float y, float w, float h, SDL_Color c)
         : rect{x, y, w, h}, color(c), isCollected(false) {}
 };
 
@@ -83,7 +93,7 @@ Uint64 g_lastTime = 0;
 // Camera
 float g_cameraX = 0.0f;
 
-// Hằng số vật lý (pixel/giây)
+// Hằng số vật lý
 const float GRAVITY = 0.8f * 60.0f * 60.0f;
 const float JUMP_FORCE = -15.0f * 60.0f;
 const float BASE_MOVE_SPEED = 5.0f * 60.0f;
@@ -98,7 +108,8 @@ const int SCREEN_HEIGHT = 600;
 // Danh sách
 std::vector<Obstacle> g_obstacles;
 std::vector<Collectible> g_collectibles;
-std::vector<DamageItem> g_damageItems; // ✅ THÊM: Danh sách vật phẩm đỏ
+std::vector<DamageItem> g_damageItems;
+std::vector<MysteryItem> g_mysteryItems; // ✅ THÊM: Danh sách vật phẩm tím
 
 int g_score = 0;
 int g_level = 1;
@@ -117,7 +128,7 @@ std::vector<Button> g_buttons = {
     {"Score",  {300, 400, 180, 80}}
 };
 
-// Hàm kiểm tra va chạm giữa 2 hình chữ nhật
+// Hàm kiểm tra va chạm
 bool checkRectCollision(const SDL_FRect& a, const SDL_FRect& b) {
     return (a.x < b.x + b.w &&
             a.x + a.w > b.x &&
@@ -158,35 +169,49 @@ void createCollectibles() {
     }
 }
 
-// ✅ THÊM: Hàm tạo vật phẩm (Đỏ - Gây sát thương)
+// Hàm tạo vật phẩm (Đỏ)
 void createDamageItems() {
     g_damageItems.clear();
-    // Bắt đầu ở 1000 và spawn thưa hơn
     for (float x = 1000; x < TRACK_LENGTH; x += 400 + (rand() % 200)) {
         float yPos = (rand() % 2 == 0) ? (GROUND_Y - 40) : (GROUND_Y - 150);
         SDL_FRect newItemRect = {x, yPos, 30, 30};
+        bool isOverlapping = false;
+        for (const auto& obs : g_obstacles) {
+            if (checkRectCollision(newItemRect, obs.rect)) { isOverlapping = true; break; }
+        }
+        if (isOverlapping) continue;
+        for (const auto& item : g_collectibles) {
+            if (checkRectCollision(newItemRect, item.rect)) { isOverlapping = true; break; }
+        }
+        if (isOverlapping) continue;
+        g_damageItems.push_back(DamageItem(x, yPos, 30, 30, {255, 0, 0, 255}));
+    }
+}
+
+// ✅ THÊM: Hàm tạo vật phẩm (Tím - Bí ẩn)
+void createMysteryItems() {
+    g_mysteryItems.clear();
+    // Spawn rất hiếm
+    for (float x = 2000; x < TRACK_LENGTH; x += 1500 + (rand() % 1000)) {
+        float yPos = (rand() % 2 == 0) ? (GROUND_Y - 40) : (GROUND_Y - 170); // Có thể ở cao hơn
+        SDL_FRect newItemRect = {x, yPos, 30, 30};
 
         bool isOverlapping = false;
-        // Kiểm tra đè lên chướng ngại vật
+        // Kiểm tra đè 3 loại kia
         for (const auto& obs : g_obstacles) {
-            if (checkRectCollision(newItemRect, obs.rect)) {
-                isOverlapping = true;
-                break;
-            }
+            if (checkRectCollision(newItemRect, obs.rect)) { isOverlapping = true; break; }
         }
-        if (isOverlapping) continue; // Bỏ qua nếu đè
-
-        // Kiểm tra đè lên vật phẩm vàng
+        if (isOverlapping) continue;
         for (const auto& item : g_collectibles) {
-            if (checkRectCollision(newItemRect, item.rect)) {
-                isOverlapping = true;
-                break;
-            }
+            if (checkRectCollision(newItemRect, item.rect)) { isOverlapping = true; break; }
         }
-        if (isOverlapping) continue; // Bỏ qua nếu đè
+        if (isOverlapping) continue;
+        for (const auto& item : g_damageItems) {
+            if (checkRectCollision(newItemRect, item.rect)) { isOverlapping = true; break; }
+        }
+        if (isOverlapping) continue;
 
-        // Nếu không đè, thêm vật phẩm
-        g_damageItems.push_back(DamageItem(x, yPos, 30, 30, {255, 0, 0, 255})); // Màu đỏ
+        g_mysteryItems.push_back(MysteryItem(x, yPos, 30, 30, {128, 0, 128, 255})); // Màu tím
     }
 }
 
@@ -211,7 +236,7 @@ void renderRoundedButton(SDL_Renderer* renderer, const Button& btn,
     SDL_DestroyTexture(texture);
 }
 
-// Hàm kiểm tra va chạm điểm với hình chữ nhật
+// Hàm kiểm tra va chạm điểm
 bool checkCollision(float x, float y, const SDL_FRect& rect) {
     return (x >= rect.x && x < rect.x + rect.w &&
             y >= rect.y && y < rect.y + rect.h);
@@ -225,7 +250,6 @@ void updatePlayer(float dt, bool isInputActive) {
     float potentialX = player.rect.x + (player.velocityX * dt);
     SDL_FRect playerTestRect = player.rect;
     playerTestRect.x = potentialX;
-
     bool isXColliding = false;
     for (auto& obs : g_obstacles) {
         if (checkRectCollision(playerTestRect, obs.rect)) {
@@ -250,7 +274,6 @@ void updatePlayer(float dt, bool isInputActive) {
     playerTestRect.y = potentialY;
     player.onGround = false;
     bool isYColliding = false;
-
     // Va chạm Y với MẶT ĐẤT
     if (playerTestRect.y + playerTestRect.h >= GROUND_Y) {
         player.rect.y = GROUND_Y - player.rect.h;
@@ -282,21 +305,16 @@ void updatePlayer(float dt, bool isInputActive) {
     }
 
     // --- 3. LOGIC KHÁC ---
-
-    // Giới hạn camera
     if (player.rect.x < g_cameraX) {
         player.rect.x = g_cameraX;
         if (player.velocityX < 0) player.velocityX = 0;
     }
-
-    // Tính điểm (vượt vật cản)
     for (auto& obs : g_obstacles) {
          if (!obs.isPassed && player.rect.x > obs.rect.x + obs.rect.w) {
             obs.isPassed = true;
             g_score += 10;
         }
     }
-
     // Nhặt vật phẩm (Vàng)
     for (auto& item : g_collectibles) {
         if (!item.isCollected && checkRectCollision(player.rect, item.rect)) {
@@ -311,18 +329,54 @@ void updatePlayer(float dt, bool isInputActive) {
             }
         }
     }
-
-    // ✅ THÊM: Va chạm vật phẩm (Đỏ)
+    // Va chạm vật phẩm (Đỏ)
     for (auto& item : g_damageItems) {
         if (!item.isCollected && checkRectCollision(player.rect, item.rect)) {
-            item.isCollected = true; // Biến mất sau khi chạm
-            player.hp -= 20; // Trừ 20 HP (5 lần là 100 HP)
+            item.isCollected = true;
+            player.hp -= 20;
             std::cout << "Ouch! HP con lai: " << player.hp << std::endl;
-
-            // Kiểm tra Game Over
             if (player.hp <= 0) {
                 std::cout << "GAME OVER!" << std::endl;
                 g_currentScene = Scene::GAME_OVER;
+            }
+        }
+    }
+
+    // ✅ THÊM: Va chạm vật phẩm (Tím - Bí ẩn)
+    for (auto& item : g_mysteryItems) {
+        if (!item.isCollected && checkRectCollision(player.rect, item.rect)) {
+            item.isCollected = true;
+            int effect = rand() % 3; // Ngẫu nhiên 0, 1, hoặc 2
+
+            switch (effect) {
+                case 0: // Hồi HP
+                    player.hp += 20;
+                    if (player.hp > 100) player.hp = 100; // Không cho vượt quá 100
+                    std::cout << "MYSTERY: HP Healed! HP: " << player.hp << std::endl;
+                    break;
+
+                case 1: // Cộng vật phẩm
+                    g_itemCount++;
+                    g_score += 20; // Thưởng thêm điểm
+                    std::cout << "MYSTERY: Bonus Item! Score: " << g_score << std::endl;
+                    // Phải kiểm tra level up ở đây
+                    if (g_itemCount >= ITEMS_PER_LEVEL) {
+                        g_level++;
+                        g_itemCount = 0;
+                        g_moveSpeed *= 1.1f;
+                        std::cout << "LEVEL UP! Level: " << g_level << ", New Speed: " << g_moveSpeed << std::endl;
+                    }
+                    break;
+
+                case 2: // Trừ HP
+                    player.hp -= 20;
+                    std::cout << "MYSTERY: Ouch! HP: " << player.hp << std::endl;
+                    // Phải kiểm tra game over ở đây
+                    if (player.hp <= 0) {
+                        std::cout << "GAME OVER!" << std::endl;
+                        g_currentScene = Scene::GAME_OVER;
+                    }
+                    break;
             }
         }
     }
@@ -331,12 +385,10 @@ void updatePlayer(float dt, bool isInputActive) {
     // Cập nhật camera
     g_cameraX = player.rect.x - 200;
     if (g_cameraX < 0) g_cameraX = 0;
-
     // Ma sát
     if (!isInputActive) {
         player.velocityX *= powf(0.9f, dt * 60.0f);
     }
-
     // Kiểm tra đến đích
     if (player.rect.x >= TRACK_LENGTH && g_currentScene != Scene::GAME_OVER) {
         g_currentScene = Scene::FINISH;
@@ -345,20 +397,18 @@ void updatePlayer(float dt, bool isInputActive) {
 
 // HÀM renderScenePlay
 void renderScenePlay(float dt) {
-    // Vẽ bầu trời
+    // Vẽ nền
     SDL_SetRenderDrawColor(g_renderer, 135, 206, 250, 255);
     SDL_RenderClear(g_renderer);
-    // Vẽ mặt đất
     SDL_FRect ground = {-g_cameraX, GROUND_Y, TRACK_LENGTH, 140};
     SDL_SetRenderDrawColor(g_renderer, 34, 139, 34, 255);
     SDL_RenderFillRect(g_renderer, &ground);
-    // Vẽ vạch kẻ đường
     SDL_SetRenderDrawColor(g_renderer, 255, 255, 255, 255);
     for (float x = 0; x < TRACK_LENGTH; x += 100) {
         SDL_FRect line = {x - g_cameraX, GROUND_Y + 60, 50, 5};
         SDL_RenderFillRect(g_renderer, &line);
     }
-    // Vẽ chướng ngại vật
+    // Vẽ vật cản
     for (const auto& obs : g_obstacles) {
         SDL_FRect renderRect = {obs.rect.x - g_cameraX, obs.rect.y, obs.rect.w, obs.rect.h};
         SDL_SetRenderDrawColor(g_renderer, obs.color.r, obs.color.g, obs.color.b, obs.color.a);
@@ -376,7 +426,7 @@ void renderScenePlay(float dt) {
             SDL_RenderRect(g_renderer, &renderRect);
         }
     }
-    // ✅ THÊM: Vẽ vật phẩm (Đỏ)
+    // Vẽ vật phẩm (Đỏ)
     for (const auto& item : g_damageItems) {
         if (!item.isCollected) {
             SDL_FRect renderRect = {item.rect.x - g_cameraX, item.rect.y, item.rect.w, item.rect.h};
@@ -386,20 +436,26 @@ void renderScenePlay(float dt) {
             SDL_RenderRect(g_renderer, &renderRect);
         }
     }
+    // ✅ THÊM: Vẽ vật phẩm (Tím)
+    for (const auto& item : g_mysteryItems) {
+        if (!item.isCollected) {
+            SDL_FRect renderRect = {item.rect.x - g_cameraX, item.rect.y, item.rect.w, item.rect.h};
+            SDL_SetRenderDrawColor(g_renderer, item.color.r, item.color.g, item.color.b, item.color.a);
+            SDL_RenderFillRect(g_renderer, &renderRect);
+            SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
+            SDL_RenderRect(g_renderer, &renderRect);
+        }
+    }
 
-    // Xử lý input phím giữ (A/D)
+    // Input và Update
     const bool* keystate = SDL_GetKeyboardState(nullptr);
     bool isMovingLeft = keystate[SDL_SCANCODE_A];
     bool isMovingRight = keystate[SDL_SCANCODE_D];
-
-    if (isMovingRight) {
-        player.velocityX = g_moveSpeed;
-    } else if (isMovingLeft) {
-        player.velocityX = -g_moveSpeed;
-    }
-
-    // Cập nhật và vẽ nhân vật
+    if (isMovingRight) { player.velocityX = g_moveSpeed; }
+    else if (isMovingLeft) { player.velocityX = -g_moveSpeed; }
     updatePlayer(dt, isMovingLeft || isMovingRight);
+
+    // Vẽ nhân vật
     SDL_FRect playerRenderRect = {
         player.rect.x - g_cameraX, player.rect.y, player.rect.w, player.rect.h
     };
@@ -488,7 +544,7 @@ void renderSceneFinish() {
     }
 }
 
-// ✅ THÊM: Hàm render màn hình GAME OVER
+// Hàm render màn hình GAME OVER
 void renderSceneGameOver() {
     SDL_SetRenderDrawColor(g_renderer, 139, 0, 0, 255); // Nền đỏ sẫm
     SDL_RenderClear(g_renderer);
@@ -496,8 +552,6 @@ void renderSceneGameOver() {
     SDL_Surface* surface = nullptr;
     SDL_Texture* texture = nullptr;
     SDL_FRect textRect;
-
-    // Chữ "GAME OVER"
     surface = TTF_RenderText_Blended(g_font, "GAME OVER", 0, textColor);
     if (surface) {
         texture = SDL_CreateTextureFromSurface(g_renderer, surface);
@@ -506,8 +560,6 @@ void renderSceneGameOver() {
         SDL_DestroySurface(surface);
         SDL_DestroyTexture(texture);
     }
-
-    // Hiển thị điểm số
     std::string scoreText = "Diem so: " + std::to_string(g_score);
     surface = TTF_RenderText_Blended(g_smallFont, scoreText.c_str(), scoreText.length(), textColor);
     if (surface) {
@@ -517,8 +569,6 @@ void renderSceneGameOver() {
         SDL_DestroySurface(surface);
         SDL_DestroyTexture(texture);
     }
-
-    // Hướng dẫn
     surface = TTF_RenderText_Blended(g_smallFont, "Bam ESC de ve Menu", 0, textColor);
     if (surface) {
         texture = SDL_CreateTextureFromSurface(g_renderer, surface);
@@ -586,7 +636,7 @@ void renderSceneMenu(Uint32 currentTime) {
     }
 }
 
-// ✅ HÀM resetPlayer (Đã thêm HP và vật phẩm đỏ)
+// HÀM resetPlayer
 void resetPlayer() {
     player.rect.x = 100;
     player.rect.y = 400;
@@ -594,16 +644,18 @@ void resetPlayer() {
     player.velocityY = 0;
     player.isJumping = false;
     player.onGround = false;
-    player.hp = 100; // ✅ RESET HP
+    player.hp = 100;
     g_cameraX = 0;
     g_score = 0;
     g_level = 1;
     g_moveSpeed = BASE_MOVE_SPEED;
     g_itemCount = 0;
     g_gameStartTime = SDL_GetTicks();
+
     createObstacles();
     createCollectibles();
-    createDamageItems(); // ✅ TẠO VẬT PHẨM ĐỎ
+    createDamageItems();
+    createMysteryItems(); // ✅ TẠO VẬT PHẨM TÍM
 }
 
 // HÀM main()
@@ -678,14 +730,13 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // ✅ THÊM: Chuyển cảnh Game Over
         switch (g_currentScene) {
             case Scene::MENU:       renderSceneMenu(menuCurrentTime); break;
             case Scene::PLAY:       renderScenePlay(dt);              break;
             case Scene::RESUME:     renderSceneResume();              break;
             case Scene::SCORE:      renderSceneScore();               break;
             case Scene::FINISH:     renderSceneFinish();              break;
-            case Scene::GAME_OVER:  renderSceneGameOver();            break; // Thêm case
+            case Scene::GAME_OVER:  renderSceneGameOver();            break;
         }
 
         SDL_RenderPresent(g_renderer);
