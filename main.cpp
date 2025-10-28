@@ -36,7 +36,7 @@ struct Player {
 // Cấu trúc cho chướng ngại vật
 struct Obstacle {
     SDL_FRect rect;
-    SDL_Color color;
+    SDL_Color color; // Giữ lại màu dự phòng nếu ảnh lỗi
     bool isPassed;
 
     Obstacle(float x, float y, float w, float h, SDL_Color c)
@@ -46,7 +46,7 @@ struct Obstacle {
 // Cấu trúc cho vật phẩm thu thập (Vàng)
 struct Collectible {
     SDL_FRect rect;
-    SDL_Color color;
+    SDL_Color color; // Giữ lại màu dự phòng
     bool isCollected;
 
     Collectible(float x, float y, float w, float h, SDL_Color c)
@@ -56,7 +56,7 @@ struct Collectible {
 // Cấu trúc cho vật phẩm gây sát thương (Đỏ)
 struct DamageItem {
     SDL_FRect rect;
-    SDL_Color color;
+    SDL_Color color; // Giữ lại màu dự phòng
     bool isCollected;
 
     DamageItem(float x, float y, float w, float h, SDL_Color c)
@@ -66,7 +66,7 @@ struct DamageItem {
 // Cấu trúc cho vật phẩm bí ẩn (Tím)
 struct MysteryItem {
     SDL_FRect rect;
-    SDL_Color color;
+    SDL_Color color; // Giữ lại màu dự phòng
     bool isCollected;
 
     MysteryItem(float x, float y, float w, float h, SDL_Color c)
@@ -84,7 +84,8 @@ SDL_Texture* g_player = nullptr;
 SDL_Texture* g_backgroundTexture = nullptr;
 SDL_Texture* g_damageItemTexture = nullptr;
 SDL_Texture* g_collectibleTexture = nullptr;
-SDL_Texture* g_mysteryItemTexture = nullptr; // ✅ 1. THÊM: Texture cho vật phẩm bí ẩn (mystery.png)
+SDL_Texture* g_mysteryItemTexture = nullptr;
+SDL_Texture* g_obstacleTexture = nullptr; // ✅ 1. THÊM: Texture cho chướng ngại vật (deadline.png)
 float g_bgWidth = 0.0f;
 float g_bgHeight = 0.0f;
 
@@ -151,12 +152,14 @@ void createObstacles() {
     g_obstacles.clear();
     for (float x = 800; x < TRACK_LENGTH; x += 300 + (rand() % 200)) {
         int obstacleType = rand() % 3;
+        // Kích thước có thể cần điều chỉnh để phù hợp với ảnh deadline.png
         switch (obstacleType) {
             case 0: g_obstacles.push_back(Obstacle(x, GROUND_Y - 60, 60, 60, {139, 69, 19, 255})); break;
             case 1: g_obstacles.push_back(Obstacle(x, GROUND_Y - 100, 50, 100, {128, 128, 128, 255})); break;
             case 2: g_obstacles.push_back(Obstacle(x, GROUND_Y - 40, 100, 40, {160, 82, 45, 255})); break;
         }
     }
+    // Cột đích cuối cùng có thể giữ nguyên hoặc thay bằng ảnh khác
     g_obstacles.push_back(Obstacle(TRACK_LENGTH + 100, GROUND_Y - 200, 20, 200, {255, 215, 0, 255}));
 }
 
@@ -418,13 +421,20 @@ void renderScenePlay(float dt) {
         SDL_RenderTexture(g_renderer, g_backgroundTexture, nullptr, &destRect2);
     }
 
-    // 3. Vẽ vật cản
+    // ✅ 3. SỬA: 3. Vẽ vật cản - BẰNG HÌNH ẢNH
     for (const auto& obs : g_obstacles) {
         SDL_FRect renderRect = {obs.rect.x - g_cameraX, obs.rect.y, obs.rect.w, obs.rect.h};
-        SDL_SetRenderDrawColor(g_renderer, obs.color.r, obs.color.g, obs.color.b, obs.color.a);
-        SDL_RenderFillRect(g_renderer, &renderRect);
-        SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
-        SDL_RenderRect(g_renderer, &renderRect);
+
+        if (g_obstacleTexture) {
+             // Vẽ bằng texture "deadline.png"
+            SDL_RenderTexture(g_renderer, g_obstacleTexture, nullptr, &renderRect);
+        } else {
+            // Dự phòng: Vẽ hình chữ nhật màu nếu texture "deadline.png" bị lỗi
+            SDL_SetRenderDrawColor(g_renderer, obs.color.r, obs.color.g, obs.color.b, obs.color.a);
+            SDL_RenderFillRect(g_renderer, &renderRect);
+            SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
+            SDL_RenderRect(g_renderer, &renderRect);
+        }
     }
 
     // 4. Vẽ vật phẩm (Vàng) - BẰNG HÌNH ẢNH
@@ -459,16 +469,14 @@ void renderScenePlay(float dt) {
         }
     }
 
-    // ✅ 3. SỬA: 6. Vẽ vật phẩm (Tím - Bí ẩn) - BẰNG HÌNH ẢNH
+    // 6. Vẽ vật phẩm (Tím - Bí ẩn) - BẰNG HÌNH ẢNH
     for (const auto& item : g_mysteryItems) {
         if (!item.isCollected) {
             SDL_FRect renderRect = {item.rect.x - g_cameraX, item.rect.y, item.rect.w, item.rect.h};
 
             if (g_mysteryItemTexture) {
-                // Vẽ bằng texture "mystery.png"
                 SDL_RenderTexture(g_renderer, g_mysteryItemTexture, nullptr, &renderRect);
             } else {
-                 // Dự phòng: Vẽ hình vuông tím nếu texture "mystery.png" bị lỗi
                 SDL_SetRenderDrawColor(g_renderer, item.color.r, item.color.g, item.color.b, item.color.a);
                 SDL_RenderFillRect(g_renderer, &renderRect);
                 SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
@@ -781,10 +789,16 @@ int main(int argc, char* argv[]) {
         std::cout << "Failed to load Assets/item.png: " << SDL_GetError() << "\n";
     }
 
-    // ✅ 2. TẢI (LOAD) TEXTURE "mystery.png"
+    // TẢI (LOAD) TEXTURE "mystery.png"
     g_mysteryItemTexture = IMG_LoadTexture(g_renderer, "Assets/mystery.png");
     if (!g_mysteryItemTexture) {
         std::cout << "Failed to load Assets/mystery.png: " << SDL_GetError() << "\n";
+    }
+
+    // ✅ 2. TẢI (LOAD) TEXTURE "deadline.png"
+    g_obstacleTexture = IMG_LoadTexture(g_renderer, "Assets/deadline.png");
+    if (!g_obstacleTexture) {
+        std::cout << "Failed to load Assets/deadline.png: " << SDL_GetError() << "\n";
     }
 
     // Tải ảnh nền và lấy kích thước
@@ -866,7 +880,8 @@ int main(int argc, char* argv[]) {
     if (g_backgroundTexture) SDL_DestroyTexture(g_backgroundTexture);
     if (g_damageItemTexture) SDL_DestroyTexture(g_damageItemTexture);
     if (g_collectibleTexture) SDL_DestroyTexture(g_collectibleTexture);
-    if (g_mysteryItemTexture) SDL_DestroyTexture(g_mysteryItemTexture); // ✅ 4. HỦY (DESTROY) TEXTURE
+    if (g_mysteryItemTexture) SDL_DestroyTexture(g_mysteryItemTexture);
+    if (g_obstacleTexture) SDL_DestroyTexture(g_obstacleTexture); // ✅ 4. HỦY (DESTROY) TEXTURE
     if (g_renderer) SDL_DestroyRenderer(g_renderer);
     if (g_window) SDL_DestroyWindow(g_window);
 
