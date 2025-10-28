@@ -8,7 +8,7 @@
 #include <cmath> // Needed for powf and fmod
 #include <ctime> // Needed for time()
 #include <cstdlib> // Needed for rand() and fabs
-#include <algorithm> // Needed for std::min, std::max
+#include <algorithm> // Needed for std.min, std.max
 
 enum class Scene {
     MENU,
@@ -29,7 +29,7 @@ struct Player {
     int hp;
     SDL_Color color;
 
-    Player() : rect{100, 400, 120, 140}, velocityX(0), velocityY(0), // Character size
+    Player() : rect{100, 400, 120, 140}, velocityX(0), velocityY(0),
              isJumping(false), onGround(false), hp(100),
              color{255, 100, 100, 255} {}
 };
@@ -53,19 +53,24 @@ struct Collectible {
 // Damage item structure (WITH MOVEMENT)
 struct DamageItem {
     SDL_FRect rect;
-    SDL_Color color; // Fallback color
+    SDL_Color color;
     bool isCollected;
-    float velocityX;    // Horizontal velocity
-    float startX;       // Initial X position
-    float moveRange;    // Horizontal movement range
+    float baseVelocityX; // ✅ STORE BASE VELOCITY
+    float velocityX;    // Current velocity (affected by multiplier)
+    float startX;
+    float moveRange;
 
     DamageItem(float x, float y, float w, float h, SDL_Color c)
         : rect{x, y, w, h}, color(c), isCollected(false),
-          velocityX(100.0f + (rand() % 50)), // Random horizontal speed (pixels/s)
-          startX(x),                         // Store initial position
-          moveRange(80.0f + (rand() % 40))   // Random movement range
+          baseVelocityX(100.0f + (rand() % 50)), // Store base speed
+          velocityX(baseVelocityX), // Initial current speed is base speed
+          startX(x),
+          moveRange(80.0f + (rand() % 40))
     {
-        if (rand() % 2 == 0) velocityX = -velocityX; // 50% chance to start left
+        if (rand() % 2 == 0) {
+             baseVelocityX = -baseVelocityX; // Adjust base direction
+             velocityX = baseVelocityX;      // Set current velocity direction
+        }
     }
 };
 
@@ -104,7 +109,7 @@ Player player;
 Uint64 g_lastTime = 0;
 float g_cameraX = 0.0f;
 
-// Physics constants - MARIO-LIKE MOVEMENT V9
+// Physics constants
 const float GRAVITY = 1900.0f;
 const float JUMP_INITIAL_VELOCITY = -780.0f;
 const float MOVE_ACCELERATION = 2000.0f;
@@ -118,7 +123,7 @@ const float EPSILON = 0.01f;
 
 // Game world constants
 const float GROUND_Y = 460.0f;
-const float TRACK_LENGTH = 30000.0f; // ✅ Increased track length
+const float TRACK_LENGTH = 30000.0f;
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 600;
 
@@ -129,21 +134,13 @@ std::vector<DamageItem> g_damageItems;
 std::vector<MysteryItem> g_mysteryItems;
 
 // Game state variables
-int g_score = 0;
-int g_level = 1; // Start at level 1 (Freshman)
-int g_itemCount = 0;
-int g_totalItemCount = 0;
-const int ITEMS_PER_LEVEL = 10;
-Uint32 g_gameStartTime = 0;
-Uint32 g_playTimeSeconds = 0;
+int g_score = 0; int g_level = 1; int g_itemCount = 0; int g_totalItemCount = 0;
+const int ITEMS_PER_LEVEL = 10; Uint32 g_gameStartTime = 0; Uint32 g_playTimeSeconds = 0;
+float g_damageItemSpeedMultiplier = 1.0f; // ✅ Speed multiplier for damage items
 
-// ✅ Level names array
-const std::vector<std::string> LEVEL_NAMES = {
-    "Unknown", // Index 0 (fallback)
-    "Freshman", "Sophomore", "Junior", "Senior",
-    "Master", "Ph.D", "Associate Professor", "Professor"
-};
-const int MAX_LEVEL = LEVEL_NAMES.size() - 1; // Should be 8
+// Level names array
+const std::vector<std::string> LEVEL_NAMES = { "Unknown", "Freshman", "Sophomore", "Junior", "Senior", "Master", "Ph.D", "Associate Professor", "Professor" };
+const int MAX_LEVEL = LEVEL_NAMES.size() - 1;
 
 // Button structure and list
 struct Button { std::string text; SDL_FRect rect; };
@@ -162,18 +159,33 @@ void createMysteryItems() { g_mysteryItems.clear();const float iw=40,ih=40,ob=20
 void renderRoundedButton(SDL_Renderer* renderer, const Button& btn, TTF_Font* font, SDL_Texture* bgTexture, SDL_Color bc, SDL_Color tc) { if(!renderer||!font||!bgTexture)return;SDL_RenderTexture(renderer,bgTexture,nullptr,&btn.rect);SDL_Surface*s=TTF_RenderText_Blended(font,btn.text.c_str(),btn.text.length(),tc);if(!s)return;SDL_Texture*t=SDL_CreateTextureFromSurface(renderer,s);SDL_FRect tr={btn.rect.x+(btn.rect.w-s->w)/2.0f,btn.rect.y+(btn.rect.h-s->h)/2.0f,(float)s->w,(float)s->h};SDL_RenderTexture(renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t); }
 bool checkCollision(float x, float y, const SDL_FRect& rect) { return (x>=rect.x&&x<rect.x+rect.w&&y>=rect.y&&y<rect.y+rect.h); }
 
-// --- DAMAGE ITEM UPDATE FUNCTION ---
+// ✅ --- DAMAGE ITEM UPDATE FUNCTION (WITH SPEED MULTIPLIER) ---
 void updateDamageItems(float dt) {
     for (auto& item : g_damageItems) {
         if (!item.isCollected) {
-            item.rect.x += item.velocityX * dt;
-            if (item.velocityX > 0 && item.rect.x >= item.startX + item.moveRange) { item.rect.x = item.startX + item.moveRange; item.velocityX = -item.velocityX; }
-            else if (item.velocityX < 0 && item.rect.x <= item.startX - item.moveRange) { item.rect.x = item.startX - item.moveRange; item.velocityX = -item.velocityX; }
+            // Apply speed multiplier
+            float currentSpeed = item.baseVelocityX * g_damageItemSpeedMultiplier;
+
+            // Update X position using current speed
+            item.rect.x += currentSpeed * dt;
+
+            // Reverse direction at edges of move range
+            // Important: Check against base velocity's sign to determine direction
+            if (item.baseVelocityX > 0 && item.rect.x >= item.startX + item.moveRange) { // Moving right initially
+                item.rect.x = item.startX + item.moveRange; // Clamp
+                item.baseVelocityX = -item.baseVelocityX; // Reverse base direction
+            } else if (item.baseVelocityX < 0 && item.rect.x <= item.startX - item.moveRange) { // Moving left initially
+                item.rect.x = item.startX - item.moveRange; // Clamp
+                item.baseVelocityX = -item.baseVelocityX; // Reverse base direction
+            }
+            // Update current velocity in case direction changed
+            item.velocityX = item.baseVelocityX;
         }
     }
 }
 
-// --- PLAYER UPDATE FUNCTION (MARIO-LIKE PHYSICS & COLLISION V9) ---
+
+// --- PLAYER UPDATE FUNCTION ---
 void updatePlayer(float dt, bool isMovingLeft, bool isMovingRight, bool isJumpHeld) {
     // --- 1. HORIZONTAL MOVEMENT ---
     float current_accel = MOVE_ACCELERATION;
@@ -206,8 +218,8 @@ void updatePlayer(float dt, bool isMovingLeft, bool isMovingRight, bool isJumpHe
     for (const auto& obs : g_obstacles) {
         if (player.rect.x < obs.rect.x + obs.rect.w && player.rect.x + player.rect.w > obs.rect.x) {
             if (checkRectCollision(player.rect, obs.rect)) {
-                if (player.velocityY > 0) { float prevBot = (player.rect.y - player.velocityY * dt) + player.rect.h; if (prevBot <= obs.rect.y + EPSILON) { player.rect.y = obs.rect.y - player.rect.h - EPSILON; player.velocityY = 0; player.onGround = true; break; } } // Adjusted Epsilon
-                else if (player.velocityY < 0) { float prevTop = player.rect.y - player.velocityY * dt; if (prevTop >= obs.rect.y + obs.rect.h - EPSILON) { player.rect.y = obs.rect.y + obs.rect.h + EPSILON; player.velocityY = 0; break; } } // Adjusted Epsilon
+                if (player.velocityY > 0) { float prevBot = (player.rect.y - player.velocityY * dt) + player.rect.h; if (prevBot <= obs.rect.y + EPSILON) { player.rect.y = obs.rect.y - player.rect.h - EPSILON; player.velocityY = 0; player.onGround = true; break; } } // Adjusted Epsilon check
+                else if (player.velocityY < 0) { float prevTop = player.rect.y - player.velocityY * dt; if (prevTop >= obs.rect.y + obs.rect.h - EPSILON) { player.rect.y = obs.rect.y + obs.rect.h + EPSILON; player.velocityY = 0; break; } } // Adjusted Epsilon check
             }
         }
     }
@@ -224,10 +236,11 @@ void updatePlayer(float dt, bool isMovingLeft, bool isMovingRight, bool isJumpHe
     for (auto& item : g_collectibles) {
         if (!item.isCollected && checkRectCollision(player.rect, item.rect)) {
             item.isCollected = true; g_itemCount++; g_totalItemCount++; g_score += 5;
-            // ✅ Check level up condition
+            // Level up condition
             if (g_itemCount >= ITEMS_PER_LEVEL && g_level < MAX_LEVEL) {
                  g_level++; g_itemCount = 0; g_maxMoveSpeed *= 1.05f;
-                 if(g_level < LEVEL_NAMES.size()) std::cout << "LEVEL UP! Level: " << LEVEL_NAMES[g_level] << ", New Max Speed: " << g_maxMoveSpeed << std::endl;
+                 g_damageItemSpeedMultiplier *= 1.1f; // ✅ Increase damage item speed
+                 if(g_level < LEVEL_NAMES.size()) std::cout << "LEVEL UP! Level: " << LEVEL_NAMES[g_level] << ", New Max Speed: " << g_maxMoveSpeed << ", Damage Speed Multi: " << g_damageItemSpeedMultiplier << std::endl;
             }
         }
     }
@@ -241,10 +254,11 @@ void updatePlayer(float dt, bool isMovingLeft, bool isMovingRight, bool isJumpHe
                 case 0: player.hp += 20; if (player.hp > 100) player.hp = 100; break;
                 case 1: g_itemCount++; g_totalItemCount++; g_score += 20;
                         std::cout << "MYSTERY: Bonus Item! Score: " << g_score << std::endl;
-                        // ✅ Check level up condition
+                        // Level up condition
                         if (g_itemCount >= ITEMS_PER_LEVEL && g_level < MAX_LEVEL) {
                             g_level++; g_itemCount = 0; g_maxMoveSpeed *= 1.05f;
-                            if(g_level < LEVEL_NAMES.size()) std::cout << "LEVEL UP! Level: " << LEVEL_NAMES[g_level] << ", New Max Speed: " << g_maxMoveSpeed << std::endl;
+                            g_damageItemSpeedMultiplier *= 1.1f; // ✅ Increase damage item speed
+                            if(g_level < LEVEL_NAMES.size()) std::cout << "LEVEL UP! Level: " << LEVEL_NAMES[g_level] << ", New Max Speed: " << g_maxMoveSpeed << ", Damage Speed Multi: " << g_damageItemSpeedMultiplier << std::endl;
                         } break;
                 case 2: player.hp -= 20; if (player.hp <= 0) { player.hp = 0; g_currentScene = Scene::GAME_OVER; } break;
             }
@@ -257,32 +271,28 @@ void updatePlayer(float dt, bool isMovingLeft, bool isMovingRight, bool isJumpHe
 
 
 // --- SCENE RENDERING FUNCTIONS ---
-// ✅ renderScenePlay updated to show level name
 void renderScenePlay(float dt, bool isMovingLeft, bool isMovingRight, bool isJumpHeld) {
     SDL_SetRenderDrawColor(g_renderer, 135, 206, 250, 255); SDL_RenderClear(g_renderer);
     if(g_backgroundTexture&&g_bgWidth>0&&g_bgHeight>0){float p=0.5f,s=(float)SCREEN_HEIGHT/g_bgHeight,sw=g_bgWidth*s,o=fmod(g_cameraX*p,sw); SDL_FRect r1={-o,0,sw,(float)SCREEN_HEIGHT},r2={-o+sw,0,sw,(float)SCREEN_HEIGHT}; SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r1); SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r2); }
     for(const auto&o:g_obstacles){ SDL_FRect r={o.rect.x-g_cameraX,o.rect.y,o.rect.w,o.rect.h}; if(g_obstacleTexture)SDL_RenderTexture(g_renderer,g_obstacleTexture,nullptr,&r); else{/*Fallback*/}}
     for(const auto&i:g_collectibles){if(!i.isCollected){SDL_FRect r={i.rect.x-g_cameraX,i.rect.y,i.rect.w,i.rect.h};if(g_collectibleTexture)SDL_RenderTexture(g_renderer,g_collectibleTexture,nullptr,&r); else{/*Fallback*/}}}
-    updateDamageItems(dt); // Update damage item positions
+    updateDamageItems(dt); // ✅ Update damage item positions before drawing
     for(const auto&i:g_damageItems){if(!i.isCollected){SDL_FRect r={i.rect.x-g_cameraX,i.rect.y,i.rect.w,i.rect.h};if(g_damageItemTexture)SDL_RenderTexture(g_renderer,g_damageItemTexture,nullptr,&r); else{/*Fallback*/}}}
     for(const auto&i:g_mysteryItems){if(!i.isCollected){SDL_FRect r={i.rect.x-g_cameraX,i.rect.y,i.rect.w,i.rect.h};if(g_mysteryItemTexture)SDL_RenderTexture(g_renderer,g_mysteryItemTexture,nullptr,&r); else{/*Fallback*/}}}
     updatePlayer(dt, isMovingLeft, isMovingRight, isJumpHeld);
     SDL_FRect playerRenderRect = { player.rect.x - g_cameraX, player.rect.y, player.rect.w, player.rect.h }; SDL_RenderTexture(g_renderer, g_player, nullptr, &playerRenderRect);
 
-    // Render HUD
+    // Render HUD (with level name)
     SDL_Color tc={255,255,255,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; float c1=50,c2=250,c3=450,c4=650;
     s=TTF_RenderText_Blended(g_smallFont,"UET",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c1,20,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string it=std::to_string(g_totalItemCount);s=TTF_RenderText_Blended(g_smallFont,it.c_str(),it.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c1,50,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}
     s=TTF_RenderText_Blended(g_smallFont,"HP",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c2,20,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string ht=std::to_string(player.hp);s=TTF_RenderText_Blended(g_smallFont,ht.c_str(),ht.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c2,50,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}
-    // ✅ Show Level Name
-    std::string levelName = (g_level >= 1 && g_level < LEVEL_NAMES.size()) ? LEVEL_NAMES[g_level] : "LEVEL";
-    s=TTF_RenderText_Blended(g_smallFont,levelName.c_str(),levelName.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c3+(150-s->w)/2.0f,35,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} // Centered text
-    // Time
+    std::string levelName=(g_level>=1&&g_level<LEVEL_NAMES.size())?LEVEL_NAMES[g_level]:"LEVEL"; s=TTF_RenderText_Blended(g_smallFont,levelName.c_str(),levelName.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c3+(150-s->w)/2.0f,35,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}
     s=TTF_RenderText_Blended(g_smallFont,"TIME",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c4,20,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} g_playTimeSeconds=(SDL_GetTicks()-g_gameStartTime)/1000; std::string tt=std::to_string(g_playTimeSeconds);s=TTF_RenderText_Blended(g_smallFont,tt.c_str(),tt.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c4,50,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}
 }
 
 void renderSceneFinish() { /* Giữ nguyên */ SDL_SetRenderDrawColor(g_renderer, 255, 215, 0, 255); SDL_RenderClear(g_renderer); SDL_Color tc={0,0,0,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; s=TTF_RenderText_Blended(g_font,"CHUC MUNG!",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,100,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string st="Vat pham: "+std::to_string(g_totalItemCount);s=TTF_RenderText_Blended(g_font,st.c_str(),st.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,200,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string tt="Thoi gian: "+std::to_string(g_playTimeSeconds)+"s";s=TTF_RenderText_Blended(g_smallFont,tt.c_str(),tt.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,300,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} s=TTF_RenderText_Blended(g_smallFont,"Bam ESC de ve Menu",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,400,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
 void renderSceneGameOver() { /* Giữ nguyên */ SDL_SetRenderDrawColor(g_renderer, 139, 0, 0, 255); SDL_RenderClear(g_renderer); SDL_Color tc={255,255,255,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; s=TTF_RenderText_Blended(g_font,"GAME OVER",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,150,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string st="Vat pham: "+std::to_string(g_totalItemCount);s=TTF_RenderText_Blended(g_smallFont,st.c_str(),st.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,300,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} s=TTF_RenderText_Blended(g_smallFont,"Bam ESC de ve Menu",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,400,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
-void renderSceneResume() { SDL_SetRenderDrawColor(g_renderer, 150, 150, 255, 255); SDL_RenderClear(g_renderer); SDL_Color tc={255,255,255,255}; SDL_Surface* s=TTF_RenderText_Blended(g_font,"PAUSED (P/Click Resume)",0,tc);if(s){SDL_Texture*t=SDL_CreateTextureFromSurface(g_renderer,s); SDL_FRect tr={SCREEN_WIDTH/2.0f-s->w/2.0f,SCREEN_HEIGHT/2.0f-s->h/2.0f,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} s=TTF_RenderText_Blended(g_smallFont,"Press ESC for Menu",0,tc);if(s){SDL_Texture*t=SDL_CreateTextureFromSurface(g_renderer,s); SDL_FRect tr={SCREEN_WIDTH/2.0f-s->w/2.0f,SCREEN_HEIGHT/2.0f+50,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
+void renderSceneResume() { SDL_SetRenderDrawColor(g_renderer, 150, 150, 255, 255); SDL_RenderClear(g_renderer); SDL_Color tc={255,255,255,255}; SDL_Surface* s=TTF_RenderText_Blended(g_font,"PAUSED (Press P or Click to Resume)",0,tc);if(s){SDL_Texture*t=SDL_CreateTextureFromSurface(g_renderer,s); SDL_FRect tr={SCREEN_WIDTH/2.0f-s->w/2.0f,SCREEN_HEIGHT/2.0f-s->h/2.0f,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} s=TTF_RenderText_Blended(g_smallFont,"Press ESC for Menu",0,tc);if(s){SDL_Texture*t=SDL_CreateTextureFromSurface(g_renderer,s); SDL_FRect tr={SCREEN_WIDTH/2.0f-s->w/2.0f,SCREEN_HEIGHT/2.0f+50,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
 void renderSceneScore() { SDL_SetRenderDrawColor(g_renderer, 255, 165, 0, 255); SDL_RenderClear(g_renderer); /* Placeholder */ }
 void renderSceneMenu(Uint32 currentTime) { if(g_backgroundTexture&&g_bgWidth>0&&g_bgHeight>0){float scrollSpeed=30.0f;float dt=(currentTime>g_lastTime)?(currentTime-g_lastTime)/1000.0f:0.0f;if(dt>0.05f)dt=0.05f;g_menuBgOffsetX+=scrollSpeed*dt;float s=(float)SCREEN_HEIGHT/g_bgHeight,sw=g_bgWidth*s,o=fmod(g_menuBgOffsetX,sw);SDL_FRect r1={-o,0,sw,(float)SCREEN_HEIGHT},r2={-o+sw,0,sw,(float)SCREEN_HEIGHT};SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r1);SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r2);}else{SDL_SetRenderDrawColor(g_renderer,173,216,230,255);SDL_RenderClear(g_renderer);} if(g_logoTexture){if(g_alpha<255&&!g_shrinking){g_alpha=(Uint8)SDL_min(g_alpha+3,255);SDL_SetTextureAlphaMod(g_logoTexture,g_alpha);}else{g_shrinking=true;}if(g_shrinking){if(g_logoRect.w>100){g_logoRect.w*=0.98f;g_logoRect.h*=0.98f;g_logoRect.x=(SCREEN_WIDTH-g_logoRect.w)/2.0f;g_logoRect.y=50.0f;}else{g_logoRect.x=20.0f;g_logoRect.y=20.0f;g_logoRect.w=100.0f;g_logoRect.h=100.0f;}}SDL_RenderTexture(g_renderer,g_logoTexture,nullptr,&g_logoRect);} if(g_player){float lw=100,lh=120;SDL_FRect lr={150.0f,SCREEN_HEIGHT-lh-50.0f,lw,lh};lr.y+=sinf((float)currentTime/500.0f)*5.0f;SDL_RenderTexture(g_renderer,g_player,nullptr,&lr);} g_buttons[0].rect={350,200,180,80};g_buttons[1].rect={350,300,180,80};g_buttons[2].rect={350,400,180,80}; if(currentTime-g_startTime>2000){SDL_Color bc={255,105,180,200},tc={80,80,80,255};for(auto&b:g_buttons){renderRoundedButton(g_renderer,b,g_font,g_buttonTexture,bc,tc);}} }
 
@@ -292,6 +302,7 @@ void resetPlayer() {
     player.velocityX = 0; player.velocityY = 0; player.isJumping = false; player.onGround = false; player.hp = 100;
     g_cameraX = 0; g_score = 0; g_level = 1; // Start at level 1
     g_maxMoveSpeed = MAX_MOVE_SPEED; // Reset max speed
+    g_damageItemSpeedMultiplier = 1.0f; // ✅ Reset damage item speed multiplier
     g_itemCount = 0; g_totalItemCount = 0; g_gameStartTime = SDL_GetTicks(); g_playTimeSeconds = 0;
     createObstacles(); createCollectibles(); createDamageItems(); createMysteryItems();
 }
@@ -319,7 +330,7 @@ int main(int argc, char* argv[]) {
     // Main Loop
     bool running = true; SDL_Event e;
     while (running) {
-        Uint64 frameStartTime = SDL_GetTicks(); float dt = (frameStartTime - g_lastTime) / 1000.0f; g_lastTime = frameStartTime; if (dt > 0.05f) dt = 0.05f; // Cap dt
+        Uint64 frameStartTime = SDL_GetTicks(); float dt = (frameStartTime - g_lastTime) / 1000.0f; g_lastTime = frameStartTime; if (dt > 0.05f) dt = 0.05f;
         Uint32 menuCurrentTime = SDL_GetTicks();
 
         // Event Handling
@@ -327,7 +338,7 @@ int main(int argc, char* argv[]) {
             if (e.type == SDL_EVENT_QUIT) running = false;
             else if (e.type == SDL_EVENT_KEY_DOWN) {
                 if (e.key.key == SDLK_ESCAPE) { if (g_currentScene == Scene::PLAY || g_currentScene == Scene::RESUME) g_currentScene = Scene::MENU; else if (g_currentScene == Scene::FINISH || g_currentScene == Scene::GAME_OVER) g_currentScene = Scene::MENU; else if (g_currentScene == Scene::MENU) running = false; }
-                else if (e.key.key == SDLK_P) { if (g_currentScene == Scene::PLAY) { g_currentScene = Scene::RESUME; std::cout << "Paused\n";} else if (g_currentScene == Scene::RESUME) { g_currentScene = Scene::PLAY; g_lastTime = SDL_GetTicks(); std::cout << "Resumed\n";} } // Pause/Resume
+                else if (e.key.key == SDLK_P) { if (g_currentScene == Scene::PLAY) { g_currentScene = Scene::RESUME; std::cout << "Paused\n";} else if (g_currentScene == Scene::RESUME) { g_currentScene = Scene::PLAY; g_lastTime = SDL_GetTicks(); std::cout << "Resumed\n";} } // Pause/Resume Key
                 else if (g_currentScene == Scene::PLAY && (e.key.key == SDLK_W || e.key.key == SDLK_SPACE) && player.onGround) { player.velocityY = JUMP_INITIAL_VELOCITY; player.onGround = false; } // Jump
             } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) {
                  if (g_currentScene == Scene::MENU && menuCurrentTime - g_startTime > 2000) { float mx=(float)e.button.x, my=(float)e.button.y; if (checkCollision(mx,my,g_buttons[0].rect)) { g_currentScene = Scene::PLAY; resetPlayer(); } else if (checkCollision(mx,my,g_buttons[1].rect)) { g_currentScene = Scene::PLAY; resetPlayer(); } else if (checkCollision(mx,my,g_buttons[2].rect)) { /* Score TBD */ } }
