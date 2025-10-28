@@ -17,7 +17,6 @@ enum class Scene {
     GAME_OVER
 };
 
-// ... (Các struct Player, Obstacle, Collectible, DamageItem, MysteryItem không đổi) ...
 // Cấu trúc cho nhân vật
 struct Player {
     SDL_FRect rect;
@@ -28,7 +27,8 @@ struct Player {
     int hp;
     SDL_Color color;
 
-    Player() : rect{100, 400, 100, 120}, velocityX(0), velocityY(0),
+    // ✅ SỬA W, H: Tăng kích thước từ 100x120 lên 120x140
+    Player() : rect{100, 400, 120, 140}, velocityX(0), velocityY(0),
              isJumping(false), onGround(false), hp(100),
              color{255, 100, 100, 255} {}
 };
@@ -85,7 +85,7 @@ SDL_Texture* g_backgroundTexture = nullptr;
 SDL_Texture* g_damageItemTexture = nullptr;
 SDL_Texture* g_collectibleTexture = nullptr;
 SDL_Texture* g_mysteryItemTexture = nullptr;
-SDL_Texture* g_obstacleTexture = nullptr; // ✅ 1. THÊM: Texture cho chướng ngại vật (deadline.png)
+SDL_Texture* g_obstacleTexture = nullptr;
 float g_bgWidth = 0.0f;
 float g_bgHeight = 0.0f;
 
@@ -138,7 +138,6 @@ std::vector<Button> g_buttons = {
     {"Score",  {300, 400, 180, 80}}
 };
 
-// ... (Các hàm checkRectCollision, createObstacles, createCollectibles, createDamageItems, createMysteryItems không đổi) ...
 // Hàm kiểm tra va chạm
 bool checkRectCollision(const SDL_FRect& a, const SDL_FRect& b) {
     return (a.x < b.x + b.w &&
@@ -147,28 +146,36 @@ bool checkRectCollision(const SDL_FRect& a, const SDL_FRect& b) {
             a.y + a.h > b.y);
 }
 
-// Hàm tạo chướng ngại vật
+// HÀM TẠO CHƯỚNG NGẠI VẬT (ĐÃ CẬP NHẬT KÍCH THƯỚC)
 void createObstacles() {
     g_obstacles.clear();
-    for (float x = 800; x < TRACK_LENGTH; x += 300 + (rand() % 200)) {
+    for (float x = 800; x < TRACK_LENGTH; x += 350 + (rand() % 250)) { // Tăng khoảng cách tối thiểu
         int obstacleType = rand() % 3;
-        // Kích thước có thể cần điều chỉnh để phù hợp với ảnh deadline.png
+        // Tăng kích thước W, H và điều chỉnh Y cho phù hợp
         switch (obstacleType) {
-            case 0: g_obstacles.push_back(Obstacle(x, GROUND_Y - 60, 60, 60, {139, 69, 19, 255})); break;
-            case 1: g_obstacles.push_back(Obstacle(x, GROUND_Y - 100, 50, 100, {128, 128, 128, 255})); break;
-            case 2: g_obstacles.push_back(Obstacle(x, GROUND_Y - 40, 100, 40, {160, 82, 45, 255})); break;
+            case 0: // Vật thấp, rộng
+                 // Tăng từ 60x60 lên 80x80
+                g_obstacles.push_back(Obstacle(x, GROUND_Y - 80, 80, 80, {139, 69, 19, 255})); break; // SỬA Y, W, H
+            case 1: // Vật cao, hẹp
+                 // Tăng từ 50x100 lên 70x130
+                g_obstacles.push_back(Obstacle(x, GROUND_Y - 130, 70, 130, {128, 128, 128, 255})); break; // SỬA Y, W, H
+            case 2: // Vật dài, thấp
+                 // Tăng từ 100x40 lên 130x50
+                g_obstacles.push_back(Obstacle(x, GROUND_Y - 50, 130, 50, {160, 82, 45, 255})); break; // SỬA Y, W, H
         }
     }
-    // Cột đích cuối cùng có thể giữ nguyên hoặc thay bằng ảnh khác
-    g_obstacles.push_back(Obstacle(TRACK_LENGTH + 100, GROUND_Y - 200, 20, 200, {255, 215, 0, 255}));
+    // Cột đích cuối cùng
+     // Tăng từ 20x200 lên 30x250
+    g_obstacles.push_back(Obstacle(TRACK_LENGTH + 100, GROUND_Y - 250, 30, 250, {255, 215, 0, 255})); // SỬA Y, W, H
 }
 
-// Hàm tạo vật phẩm (Vàng)
+// HÀM TẠO VẬT PHẨM (VÀNG) (ĐÃ CẬP NHẬT KÍCH THƯỚC)
 void createCollectibles() {
     g_collectibles.clear();
     for (float x = 600; x < TRACK_LENGTH; x += 200 + (rand() % 150)) {
-        float yPos = (rand() % 2 == 0) ? (GROUND_Y - 40) : (GROUND_Y - 160);
-        SDL_FRect newItemRect = {x, yPos, 30, 30};
+        float yPos = (rand() % 2 == 0) ? (GROUND_Y - 50) : (GROUND_Y - 180); // Điều chỉnh Y nếu cần
+        // Tăng kích thước từ 30x30 lên 40x40
+        SDL_FRect newItemRect = {x, yPos, 40, 40}; // SỬA W, H
         bool isOverlapping = false;
         for (const auto& obs : g_obstacles) {
             if (checkRectCollision(newItemRect, obs.rect)) {
@@ -177,17 +184,19 @@ void createCollectibles() {
             }
         }
         if (!isOverlapping) {
-            g_collectibles.push_back(Collectible(x, yPos, 30, 30, {255, 255, 0, 255}));
+             // Sử dụng kích thước mới khi tạo
+            g_collectibles.push_back(Collectible(x, yPos, 40, 40, {255, 255, 0, 255})); // SỬA W, H
         }
     }
 }
 
-// Hàm tạo vật phẩm (Đỏ)
+// HÀM TẠO VẬT PHẨM (ĐỎ) (ĐÃ CẬP NHẬT KÍCH THƯỚC)
 void createDamageItems() {
     g_damageItems.clear();
     for (float x = 1000; x < TRACK_LENGTH; x += 400 + (rand() % 200)) {
-        float yPos = (rand() % 2 == 0) ? (GROUND_Y - 40) : (GROUND_Y - 150);
-        SDL_FRect newItemRect = {x, yPos, 30, 30};
+        float yPos = (rand() % 2 == 0) ? (GROUND_Y - 50) : (GROUND_Y - 170); // Điều chỉnh Y nếu cần
+        // Tăng kích thước từ 30x30 lên 40x40
+        SDL_FRect newItemRect = {x, yPos, 40, 40}; // SỬA W, H
         bool isOverlapping = false;
         for (const auto& obs : g_obstacles) {
             if (checkRectCollision(newItemRect, obs.rect)) { isOverlapping = true; break; }
@@ -197,17 +206,18 @@ void createDamageItems() {
             if (checkRectCollision(newItemRect, item.rect)) { isOverlapping = true; break; }
         }
         if (isOverlapping) continue;
-        g_damageItems.push_back(DamageItem(x, yPos, 30, 30, {255, 0, 0, 255}));
+        // Sử dụng kích thước mới khi tạo
+        g_damageItems.push_back(DamageItem(x, yPos, 40, 40, {255, 0, 0, 255})); // SỬA W, H
     }
 }
 
-// Hàm tạo vật phẩm (Tím - Bí ẩn)
+// HÀM TẠO VẬT PHẨM (TÍM - BÍ ẨN) (ĐÃ CẬP NHẬT KÍCH THƯỚC)
 void createMysteryItems() {
     g_mysteryItems.clear();
-    // Đặt ở 700 để test
     for (float x = 700; x < TRACK_LENGTH; x += 1500 + (rand() % 1000)) {
-        float yPos = (rand() % 2 == 0) ? (GROUND_Y - 40) : (GROUND_Y - 170);
-        SDL_FRect newItemRect = {x, yPos, 30, 30};
+        float yPos = (rand() % 2 == 0) ? (GROUND_Y - 50) : (GROUND_Y - 190); // Điều chỉnh Y nếu cần
+        // Tăng kích thước từ 30x30 lên 40x40
+        SDL_FRect newItemRect = {x, yPos, 40, 40}; // SỬA W, H
         bool isOverlapping = false;
         for (const auto& obs : g_obstacles) {
             if (checkRectCollision(newItemRect, obs.rect)) { isOverlapping = true; break; }
@@ -221,11 +231,11 @@ void createMysteryItems() {
             if (checkRectCollision(newItemRect, item.rect)) { isOverlapping = true; break; }
         }
         if (isOverlapping) continue;
-        g_mysteryItems.push_back(MysteryItem(x, yPos, 30, 30, {128, 0, 128, 255}));
+         // Sử dụng kích thước mới khi tạo
+        g_mysteryItems.push_back(MysteryItem(x, yPos, 40, 40, {128, 0, 128, 255})); // SỬA W, H
     }
 }
 
-// ... (Các hàm renderRoundedButton, checkCollision, updatePlayer không đổi) ...
 // Hàm vẽ nút
 void renderRoundedButton(SDL_Renderer* renderer, const Button& btn,
                        TTF_Font* font, SDL_Texture* bgTexture, SDL_Color borderColor, SDL_Color textColor)
@@ -253,78 +263,113 @@ bool checkCollision(float x, float y, const SDL_FRect& rect) {
 }
 
 
-// HÀM updatePlayer
+// ✅ HÀM updatePlayer (ĐÃ SỬA LỖI VA CHẠM Y)
 void updatePlayer(float dt, bool isInputActive) {
 
     // --- 1. XỬ LÝ TRỤC X (NGANG) ---
+    // (Phần xử lý trục X giữ nguyên như cũ)
     float potentialX = player.rect.x + (player.velocityX * dt);
-    SDL_FRect playerTestRect = player.rect;
-    playerTestRect.x = potentialX;
+    SDL_FRect playerTestRectX = player.rect; // Đổi tên để tránh nhầm lẫn
+    playerTestRectX.x = potentialX;
     bool isXColliding = false;
     for (auto& obs : g_obstacles) {
-        if (checkRectCollision(playerTestRect, obs.rect)) {
+        // Kiểm tra va chạm X *trước* khi kiểm tra Y
+        SDL_FRect currentYRect = player.rect; // Dùng vị trí Y hiện tại để kiểm tra X
+        currentYRect.x = potentialX;
+        if (checkRectCollision(currentYRect, obs.rect)) {
             isXColliding = true;
-            if (player.velocityX > 0) {
+            if (player.velocityX > 0) { // Đang đi sang phải
                 player.rect.x = obs.rect.x - player.rect.w - EPSILON;
-            } else if (player.velocityX < 0) {
+            } else if (player.velocityX < 0) { // Đang đi sang trái
                 player.rect.x = obs.rect.x + obs.rect.w + EPSILON;
             }
-            player.velocityX = 0;
-            break;
+            player.velocityX = 0; // Dừng lại khi va chạm ngang
+            break; // Chỉ xử lý va chạm với một vật cản mỗi frame
         }
     }
     if (!isXColliding) {
-        player.rect.x = potentialX;
+        player.rect.x = potentialX; // Chỉ di chuyển nếu không va chạm ngang
     }
+
 
     // --- 2. XỬ LÝ TRỤC Y (DỌC) ---
     player.velocityY += GRAVITY * dt;
     float potentialY = player.rect.y + (player.velocityY * dt);
-    playerTestRect = player.rect;
-    playerTestRect.y = potentialY;
-    player.onGround = false;
-    bool isYColliding = false;
-    // Va chạm Y với MẶT ĐẤT
-    if (playerTestRect.y + playerTestRect.h >= GROUND_Y) {
-        player.rect.y = GROUND_Y - player.rect.h;
+    SDL_FRect playerTestRectY = player.rect; // Dùng vị trí X đã cập nhật
+    playerTestRectY.y = potentialY;
+
+    bool landedOnSomething = false; // Cờ theo dõi việc tiếp đất
+
+    // Ưu tiên kiểm tra va chạm với MẶT ĐẤT CHÍNH
+    // Chỉ kiểm tra khi đang rơi xuống (velocityY >= 0)
+    // Và vị trí y hiện tại của chân nhân vật đang ở trên hoặc sát mặt đất
+    if (player.velocityY >= 0 &&
+        playerTestRectY.y + playerTestRectY.h >= GROUND_Y &&
+        player.rect.y + player.rect.h <= GROUND_Y + EPSILON * 10) // Cho phép sai số nhỏ
+    {
+        player.rect.y = GROUND_Y - player.rect.h; // Đặt đúng trên mặt đất
         player.velocityY = 0;
-        player.onGround = true;
-        player.isJumping = false;
-        isYColliding = true;
+        landedOnSomething = true;
     }
-    // Va chạm Y với VẬT CẢN
-    if (!isYColliding) {
+    else // Nếu không va chạm mặt đất chính, kiểm tra chướng ngại vật
+    {
         for (auto& obs : g_obstacles) {
-            if (checkRectCollision(playerTestRect, obs.rect)) {
-                if (player.velocityY > 0) {
-                    player.rect.y = obs.rect.y - player.rect.h - EPSILON;
-                    player.onGround = true;
-                    player.isJumping = false;
-                } else if (player.velocityY < 0) {
-                    player.rect.y = obs.rect.y + obs.rect.h + EPSILON;
+            // Dùng playerTestRectY để kiểm tra va chạm tiềm năng
+            if (checkRectCollision(playerTestRectY, obs.rect))
+            {
+                // A. Đang rơi xuống (velocityY > 0) VÀ chân nhân vật hiện tại ở trên hoặc sát nóc vật cản
+                if (player.velocityY > 0 &&
+                    player.rect.y + player.rect.h <= obs.rect.y + EPSILON * 10) // Cho phép sai số nhỏ
+                {
+                    player.rect.y = obs.rect.y - player.rect.h - EPSILON; // Đặt trên vật cản
+                    player.velocityY = 0;
+                    landedOnSomething = true;
+                    break; // Thoát vòng lặp khi đã xử lý va chạm
                 }
-                player.velocityY = 0;
-                isYColliding = true;
-                break;
+                // B. Đang nhảy lên (velocityY < 0) VÀ đầu nhân vật hiện tại ở dưới hoặc sát đáy vật cản
+                else if (player.velocityY < 0 &&
+                         player.rect.y >= obs.rect.y + obs.rect.h - EPSILON * 10) // Cho phép sai số nhỏ
+                {
+                    player.rect.y = obs.rect.y + obs.rect.h + EPSILON; // Đặt dưới vật cản
+                    player.velocityY = 0; // Dừng nhảy lên
+                    // Không set landedOnSomething = true khi đụng đầu
+                    break; // Thoát vòng lặp khi đã xử lý va chạm
+                }
+                 // C. Trường hợp bị kẹt bên trong (hiếm gặp nếu logic A, B đúng)
+                 // hoặc va chạm ngang nhưng được xử lý ở đây -> cần phân biệt rõ ràng hơn
+                 // Tạm thời bỏ qua xử lý phức tạp này, tập trung vào rơi và nhảy
             }
         }
     }
-    // Không va chạm Y
-    if (!isYColliding) {
-        player.rect.y = potentialY;
+
+    // Cập nhật trạng thái onGround và vị trí Y cuối cùng
+    if (landedOnSomething) {
+        player.onGround = true;
+        player.isJumping = false;
+    } else {
+        // Nếu không tiếp đất, nhân vật chắc chắn đang ở trên không
+        player.rect.y = potentialY; // Áp dụng vị trí Y tiềm năng
+        player.onGround = false;
+        // isJumping chỉ nên là true nếu đang thực sự bay lên (vận tốc < 0)
+        player.isJumping = (player.velocityY < 0);
     }
 
+
     // --- 3. LOGIC KHÁC ---
+    // Giới hạn không cho nhân vật đi lùi khỏi camera
     if (player.rect.x < g_cameraX) {
         player.rect.x = g_cameraX;
         if (player.velocityX < 0) player.velocityX = 0;
     }
+
+    // Tính điểm khi vượt qua vật cản
     for (auto& obs : g_obstacles) {
-         if (!obs.isPassed && player.rect.x > obs.rect.x + obs.rect.w) {
+         if (!obs.isPassed && player.rect.x + player.rect.w / 2 > obs.rect.x + obs.rect.w) { // Vượt qua tâm vật cản
             obs.isPassed = true;
             g_score += 10;
         }
     }
+
     // Nhặt vật phẩm (Vàng)
     for (auto& item : g_collectibles) {
         if (!item.isCollected && checkRectCollision(player.rect, item.rect)) {
@@ -347,6 +392,7 @@ void updatePlayer(float dt, bool isInputActive) {
             player.hp -= 20;
             std::cout << "Ouch! HP con lai: " << player.hp << std::endl;
             if (player.hp <= 0) {
+                player.hp = 0; // Đảm bảo HP không âm
                 std::cout << "GAME OVER!" << std::endl;
                 g_currentScene = Scene::GAME_OVER;
             }
@@ -377,10 +423,12 @@ void updatePlayer(float dt, bool isInputActive) {
                     break;
                 case 2:
                     player.hp -= 20;
-                    std::cout << "MYSTERY: Ouch! HP: " << player.hp << std::endl;
-                    if (player.hp <= 0) {
-                        std::cout << "GAME OVER!" << std::endl;
+                     if (player.hp <= 0) {
+                        player.hp = 0; // Đảm bảo HP không âm
+                        std::cout << "MYSTERY: Ouch! GAME OVER!" << std::endl;
                         g_currentScene = Scene::GAME_OVER;
+                    } else {
+                         std::cout << "MYSTERY: Ouch! HP: " << player.hp << std::endl;
                     }
                     break;
             }
@@ -390,18 +438,34 @@ void updatePlayer(float dt, bool isInputActive) {
     // Cập nhật camera
     g_cameraX = player.rect.x - 200;
     if (g_cameraX < 0) g_cameraX = 0;
-    // Ma sát
-    if (!isInputActive) {
-        player.velocityX *= powf(0.9f, dt * 60.0f);
+
+    // Ma sát (chỉ áp dụng khi ở trên mặt đất và không có input ngang)
+    if (player.onGround && !isInputActive) {
+         player.velocityX *= powf(0.85f, dt * 60.0f); // Tăng ma sát lên một chút
+         if (fabs(player.velocityX) < 0.1f) {
+             player.velocityX = 0; // Dừng hẳn nếu vận tốc quá nhỏ
+         }
     }
+     // Giảm tốc độ ngang từ từ khi ở trên không (air resistance)
+     else if (!player.onGround){
+          player.velocityX *= powf(0.98f, dt * 60.0f);
+     }
+
+
     // Kiểm tra đến đích
     if (player.rect.x >= TRACK_LENGTH && g_currentScene != Scene::GAME_OVER) {
         g_currentScene = Scene::FINISH;
     }
+
+    // Rơi xuống vực -> Game Over
+    if (player.rect.y > SCREEN_HEIGHT + player.rect.h && g_currentScene != Scene::GAME_OVER) {
+        std::cout << "Fell off! GAME OVER!" << std::endl;
+        g_currentScene = Scene::GAME_OVER;
+    }
 }
 
 
-// HÀM renderScenePlay
+// HÀM renderScenePlay (Không đổi về logic vẽ texture)
 void renderScenePlay(float dt) {
     // 1. Xóa màn hình
     SDL_SetRenderDrawColor(g_renderer, 135, 206, 250, 255);
@@ -421,7 +485,7 @@ void renderScenePlay(float dt) {
         SDL_RenderTexture(g_renderer, g_backgroundTexture, nullptr, &destRect2);
     }
 
-    // ✅ 3. SỬA: 3. Vẽ vật cản - BẰNG HÌNH ẢNH
+    // 3. Vẽ vật cản - BẰNG HÌNH ẢNH
     for (const auto& obs : g_obstacles) {
         SDL_FRect renderRect = {obs.rect.x - g_cameraX, obs.rect.y, obs.rect.w, obs.rect.h};
 
@@ -500,6 +564,7 @@ void renderScenePlay(float dt) {
     SDL_RenderTexture(g_renderer, g_player, nullptr, &playerRenderRect);
 
     // --- 9. HIỂN THỊ HUD KIỂU MARIO ---
+    // ... (Phần HUD không đổi) ...
     SDL_Color textColor = {255, 255, 255, 255};
     SDL_Surface* surface = nullptr;
     SDL_Texture* texture = nullptr;
@@ -733,7 +798,7 @@ void renderSceneMenu(Uint32 currentTime) {
 // HÀM resetPlayer (Không đổi)
 void resetPlayer() {
     player.rect.x = 100;
-    player.rect.y = 400;
+    player.rect.y = 300; // Điều chỉnh Y ban đầu nếu cần (ví dụ: đặt cao hơn chút)
     player.velocityX = 0;
     player.velocityY = 0;
     player.isJumping = false;
@@ -775,7 +840,7 @@ int main(int argc, char* argv[]) {
 
     g_logoTexture = IMG_LoadTexture(g_renderer, "Assets/uet.png");
     g_buttonTexture = IMG_LoadTexture(g_renderer, "Assets/button.png");
-    g_player = IMG_LoadTexture(g_renderer, "Assets/player.png");
+    g_player = IMG_LoadTexture(g_renderer, "Assets/player.png"); // Đảm bảo đường dẫn này đúng
 
     // TẢI (LOAD) TEXTURE "bad.png"
     g_damageItemTexture = IMG_LoadTexture(g_renderer, "Assets/bad.png");
@@ -795,7 +860,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Failed to load Assets/mystery.png: " << SDL_GetError() << "\n";
     }
 
-    // ✅ 2. TẢI (LOAD) TEXTURE "deadline.png"
+    // TẢI (LOAD) TEXTURE "deadline.png"
     g_obstacleTexture = IMG_LoadTexture(g_renderer, "Assets/deadline.png");
     if (!g_obstacleTexture) {
         std::cout << "Failed to load Assets/deadline.png: " << SDL_GetError() << "\n";
@@ -823,6 +888,7 @@ int main(int argc, char* argv[]) {
         float dt = (frameStartTime - g_lastTime) / 1000.0f;
         g_lastTime = frameStartTime;
 
+        // Giới hạn dt để tránh lỗi khi pause hoặc lag
         if (dt > 0.05f) {
             dt = 0.05f;
         }
@@ -838,10 +904,10 @@ int main(int argc, char* argv[]) {
                     else running = false;
                 }
                 else if (g_currentScene == Scene::PLAY) {
+                    // Chỉ cho phép nhảy khi đang trên mặt đất
                     if ((e.key.key == SDLK_W || e.key.key == SDLK_SPACE) && player.onGround) {
                         player.velocityY = JUMP_FORCE;
-                        player.isJumping = true;
-                        player.onGround = false;
+                        // Không cần set isJumping và onGround ở đây, updatePlayer sẽ xử lý
                     }
                 }
             } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) {
@@ -851,10 +917,22 @@ int main(int argc, char* argv[]) {
                         g_currentScene = Scene::PLAY; resetPlayer();
                     }
                     else if (checkCollision(mouseX, mouseY, g_buttons[1].rect)) {
-                        g_currentScene = Scene::RESUME;
+                        // Logic Resume chưa được implement
+                        // Tạm thời vào Play khi bấm Resume nếu chưa chơi lần nào
+                        if (g_gameStartTime == 0) { // Kiểm tra nếu game chưa bắt đầu
+                             g_currentScene = Scene::PLAY; resetPlayer();
+                        } else {
+                             // Nếu đã chơi, có thể quay lại Scene::PLAY mà không reset
+                             // g_currentScene = Scene::PLAY; // Bỏ comment nếu muốn resume thực sự
+                             std::cout << "Resume function not fully implemented yet.\n";
+                             g_currentScene = Scene::PLAY; // Tạm thời reset
+                             resetPlayer();
+                        }
                     }
                     else if (checkCollision(mouseX, mouseY, g_buttons[2].rect)) {
-                        g_currentScene = Scene::SCORE;
+                         // Logic Score chưa được implement
+                         // g_currentScene = Scene::SCORE;
+                         std::cout << "Score scene not implemented yet.\n";
                     }
                 }
             }
@@ -863,8 +941,8 @@ int main(int argc, char* argv[]) {
         switch (g_currentScene) {
             case Scene::MENU:       renderSceneMenu(menuCurrentTime); break;
             case Scene::PLAY:       renderScenePlay(dt);              break;
-            case Scene::RESUME:     renderSceneResume();              break;
-            case Scene::SCORE:      renderSceneScore();               break;
+            case Scene::RESUME:     renderSceneResume();              break; // Scene này có thể không cần thiết nữa
+            case Scene::SCORE:      renderSceneScore();               break; // Scene này có thể không cần thiết nữa
             case Scene::FINISH:     renderSceneFinish();              break;
             case Scene::GAME_OVER:  renderSceneGameOver();            break;
         }
@@ -881,7 +959,7 @@ int main(int argc, char* argv[]) {
     if (g_damageItemTexture) SDL_DestroyTexture(g_damageItemTexture);
     if (g_collectibleTexture) SDL_DestroyTexture(g_collectibleTexture);
     if (g_mysteryItemTexture) SDL_DestroyTexture(g_mysteryItemTexture);
-    if (g_obstacleTexture) SDL_DestroyTexture(g_obstacleTexture); // ✅ 4. HỦY (DESTROY) TEXTURE
+    if (g_obstacleTexture) SDL_DestroyTexture(g_obstacleTexture);
     if (g_renderer) SDL_DestroyRenderer(g_renderer);
     if (g_window) SDL_DestroyWindow(g_window);
 
