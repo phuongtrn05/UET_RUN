@@ -19,6 +19,7 @@ enum class Scene {
     GAME_OVER
 };
 
+// ... (Structs: Player, Obstacle, Collectible, DamageItem, MysteryItem - Giữ nguyên) ...
 // Character structure
 struct Player {
     SDL_FRect rect;
@@ -55,23 +56,14 @@ struct DamageItem {
     SDL_FRect rect;
     SDL_Color color;
     bool isCollected;
-    float baseVelocityX; // ✅ STORE BASE VELOCITY
-    float velocityX;    // Current velocity (affected by multiplier)
+    float baseVelocityX;
+    float velocityX;
     float startX;
     float moveRange;
-
     DamageItem(float x, float y, float w, float h, SDL_Color c)
         : rect{x, y, w, h}, color(c), isCollected(false),
-          baseVelocityX(100.0f + (rand() % 50)), // Store base speed
-          velocityX(baseVelocityX), // Initial current speed is base speed
-          startX(x),
-          moveRange(80.0f + (rand() % 40))
-    {
-        if (rand() % 2 == 0) {
-             baseVelocityX = -baseVelocityX; // Adjust base direction
-             velocityX = baseVelocityX;      // Set current velocity direction
-        }
-    }
+          baseVelocityX(100.0f + (rand() % 50)), velocityX(baseVelocityX), startX(x),
+          moveRange(80.0f + (rand() % 40)) { if (rand() % 2 == 0) { baseVelocityX = -baseVelocityX; velocityX = baseVelocityX; } }
 };
 
 // Mystery item structure
@@ -108,6 +100,7 @@ Scene g_currentScene = Scene::MENU;
 Player player;
 Uint64 g_lastTime = 0;
 float g_cameraX = 0.0f;
+bool g_gameInProgress = false;
 
 // Physics constants
 const float GRAVITY = 1900.0f;
@@ -136,7 +129,7 @@ std::vector<MysteryItem> g_mysteryItems;
 // Game state variables
 int g_score = 0; int g_level = 1; int g_itemCount = 0; int g_totalItemCount = 0;
 const int ITEMS_PER_LEVEL = 10; Uint32 g_gameStartTime = 0; Uint32 g_playTimeSeconds = 0;
-float g_damageItemSpeedMultiplier = 1.0f; // ✅ Speed multiplier for damage items
+float g_damageItemSpeedMultiplier = 1.0f;
 
 // Level names array
 const std::vector<std::string> LEVEL_NAMES = { "Unknown", "Freshman", "Sophomore", "Junior", "Senior", "Master", "Ph.D", "Associate Professor", "Professor" };
@@ -159,151 +152,118 @@ void createMysteryItems() { g_mysteryItems.clear();const float iw=40,ih=40,ob=20
 void renderRoundedButton(SDL_Renderer* renderer, const Button& btn, TTF_Font* font, SDL_Texture* bgTexture, SDL_Color bc, SDL_Color tc) { if(!renderer||!font||!bgTexture)return;SDL_RenderTexture(renderer,bgTexture,nullptr,&btn.rect);SDL_Surface*s=TTF_RenderText_Blended(font,btn.text.c_str(),btn.text.length(),tc);if(!s)return;SDL_Texture*t=SDL_CreateTextureFromSurface(renderer,s);SDL_FRect tr={btn.rect.x+(btn.rect.w-s->w)/2.0f,btn.rect.y+(btn.rect.h-s->h)/2.0f,(float)s->w,(float)s->h};SDL_RenderTexture(renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t); }
 bool checkCollision(float x, float y, const SDL_FRect& rect) { return (x>=rect.x&&x<rect.x+rect.w&&y>=rect.y&&y<rect.y+rect.h); }
 
-// ✅ --- DAMAGE ITEM UPDATE FUNCTION (WITH SPEED MULTIPLIER) ---
-void updateDamageItems(float dt) {
-    for (auto& item : g_damageItems) {
-        if (!item.isCollected) {
-            // Apply speed multiplier
-            float currentSpeed = item.baseVelocityX * g_damageItemSpeedMultiplier;
-
-            // Update X position using current speed
-            item.rect.x += currentSpeed * dt;
-
-            // Reverse direction at edges of move range
-            // Important: Check against base velocity's sign to determine direction
-            if (item.baseVelocityX > 0 && item.rect.x >= item.startX + item.moveRange) { // Moving right initially
-                item.rect.x = item.startX + item.moveRange; // Clamp
-                item.baseVelocityX = -item.baseVelocityX; // Reverse base direction
-            } else if (item.baseVelocityX < 0 && item.rect.x <= item.startX - item.moveRange) { // Moving left initially
-                item.rect.x = item.startX - item.moveRange; // Clamp
-                item.baseVelocityX = -item.baseVelocityX; // Reverse base direction
-            }
-            // Update current velocity in case direction changed
-            item.velocityX = item.baseVelocityX;
-        }
-    }
-}
-
+// --- DAMAGE ITEM UPDATE FUNCTION ---
+void updateDamageItems(float dt) { for (auto& item : g_damageItems) { if (!item.isCollected) { float currentSpeed = item.baseVelocityX * g_damageItemSpeedMultiplier; item.rect.x += currentSpeed * dt; if (item.baseVelocityX > 0 && item.rect.x >= item.startX + item.moveRange) { item.rect.x = item.startX + item.moveRange; item.baseVelocityX = -item.baseVelocityX; } else if (item.baseVelocityX < 0 && item.rect.x <= item.startX - item.moveRange) { item.rect.x = item.startX - item.moveRange; item.baseVelocityX = -item.baseVelocityX; } item.velocityX = item.baseVelocityX; } } }
 
 // --- PLAYER UPDATE FUNCTION ---
 void updatePlayer(float dt, bool isMovingLeft, bool isMovingRight, bool isJumpHeld) {
-    // --- 1. HORIZONTAL MOVEMENT ---
-    float current_accel = MOVE_ACCELERATION;
-    if (isMovingRight) { player.velocityX += current_accel * dt; if (player.velocityX > g_maxMoveSpeed) player.velocityX = g_maxMoveSpeed; }
-    else if (isMovingLeft) { player.velocityX -= current_accel * dt; if (player.velocityX < -g_maxMoveSpeed) player.velocityX = -g_maxMoveSpeed; }
-    // Friction applied later (Step 5)
-
-    // --- 2. X-AXIS COLLISION ---
+    // 1. HORIZONTAL MOVEMENT
+    float current_accel = MOVE_ACCELERATION; if (isMovingRight) { player.velocityX += current_accel * dt; if (player.velocityX > g_maxMoveSpeed) player.velocityX = g_maxMoveSpeed; } else if (isMovingLeft) { player.velocityX -= current_accel * dt; if (player.velocityX < -g_maxMoveSpeed) player.velocityX = -g_maxMoveSpeed; }
+    // 2. X-AXIS COLLISION
     player.rect.x += player.velocityX * dt;
-    for (const auto& obs : g_obstacles) {
-        if (player.rect.y < obs.rect.y + obs.rect.h && player.rect.y + player.rect.h > obs.rect.y) {
-            if (checkRectCollision(player.rect, obs.rect)) {
-                if (player.velocityX > 0) player.rect.x = obs.rect.x - player.rect.w - EPSILON;
-                else if (player.velocityX < 0) player.rect.x = obs.rect.x + obs.rect.w + EPSILON;
-                player.velocityX = 0; break;
-            }
-        }
-    }
-
-    // --- 3. VERTICAL MOVEMENT ---
-    float currentGravity = GRAVITY;
-    if (isJumpHeld && player.velocityY < 0) currentGravity *= JUMP_GRAVITY_MODIFIER;
-    player.velocityY += currentGravity * dt;
-    if (!isJumpHeld && player.velocityY < 0) { if (player.velocityY < -150.0f) player.velocityY *= JUMP_CUT_VELOCITY_REDUCTION; }
-
-    // --- 4. Y-AXIS COLLISION ---
-    player.rect.y += player.velocityY * dt;
-    player.onGround = false;
+    for (const auto& obs : g_obstacles) { if (player.rect.y < obs.rect.y + obs.rect.h && player.rect.y + player.rect.h > obs.rect.y) { if (checkRectCollision(player.rect, obs.rect)) { if (player.velocityX > 0) player.rect.x = obs.rect.x - player.rect.w - EPSILON; else if (player.velocityX < 0) player.rect.x = obs.rect.x + obs.rect.w + EPSILON; player.velocityX = 0; break; } } }
+    // 3. VERTICAL MOVEMENT
+    float currentGravity = GRAVITY; if (isJumpHeld && player.velocityY < 0) currentGravity *= JUMP_GRAVITY_MODIFIER; player.velocityY += currentGravity * dt; if (!isJumpHeld && player.velocityY < 0) { if (player.velocityY < -150.0f) player.velocityY *= JUMP_CUT_VELOCITY_REDUCTION; }
+    // 4. Y-AXIS COLLISION
+    player.rect.y += player.velocityY * dt; player.onGround = false;
     if (player.rect.y + player.rect.h > GROUND_Y) { player.rect.y = GROUND_Y - player.rect.h; if (player.velocityY > 0) player.velocityY = 0; player.onGround = true; }
-    for (const auto& obs : g_obstacles) {
-        if (player.rect.x < obs.rect.x + obs.rect.w && player.rect.x + player.rect.w > obs.rect.x) {
-            if (checkRectCollision(player.rect, obs.rect)) {
-                if (player.velocityY > 0) { float prevBot = (player.rect.y - player.velocityY * dt) + player.rect.h; if (prevBot <= obs.rect.y + EPSILON) { player.rect.y = obs.rect.y - player.rect.h - EPSILON; player.velocityY = 0; player.onGround = true; break; } } // Adjusted Epsilon check
-                else if (player.velocityY < 0) { float prevTop = player.rect.y - player.velocityY * dt; if (prevTop >= obs.rect.y + obs.rect.h - EPSILON) { player.rect.y = obs.rect.y + obs.rect.h + EPSILON; player.velocityY = 0; break; } } // Adjusted Epsilon check
-            }
-        }
-    }
-     if (!player.onGround && fabs(player.velocityY) < GRAVITY * dt * 1.5) { SDL_FRect feetRect = player.rect; feetRect.y += EPSILON * 5; if (feetRect.y + feetRect.h >= GROUND_Y) { player.onGround = true; } else { for (const auto& obs : g_obstacles) { if (player.rect.x < obs.rect.x + obs.rect.w && player.rect.x + player.rect.w > obs.rect.x) { if(checkRectCollision(feetRect, obs.rect)){ player.onGround = true; break; } } } } if (player.onGround && player.velocityY > 0) player.velocityY = 0; }
-
-
-    // --- 5. APPLY FRICTION/AIR RESISTANCE ---
+    for (const auto& obs : g_obstacles) { if (player.rect.x < obs.rect.x + obs.rect.w && player.rect.x + player.rect.w > obs.rect.x) { if (checkRectCollision(player.rect, obs.rect)) { if (player.velocityY > 0) { float prevBot = (player.rect.y - player.velocityY * dt) + player.rect.h; if (prevBot <= obs.rect.y + EPSILON) { player.rect.y = obs.rect.y - player.rect.h - EPSILON; player.velocityY = 0; player.onGround = true; break; } } else if (player.velocityY < 0) { float prevTop = player.rect.y - player.velocityY * dt; if (prevTop >= obs.rect.y + obs.rect.h - EPSILON) { player.rect.y = obs.rect.y + obs.rect.h + EPSILON; player.velocityY = 0; break; } } } } }
+    if (!player.onGround && fabs(player.velocityY) < GRAVITY * dt * 1.5) { SDL_FRect feetRect = player.rect; feetRect.y += EPSILON * 5; if (feetRect.y + feetRect.h >= GROUND_Y) { player.onGround = true; } else { for (const auto& obs : g_obstacles) { if (player.rect.x < obs.rect.x + obs.rect.w && player.rect.x + player.rect.w > obs.rect.x) { if(checkRectCollision(feetRect, obs.rect)){ player.onGround = true; break; } } } } if (player.onGround && player.velocityY > 0) player.velocityY = 0; }
+    // 5. APPLY FRICTION/AIR RESISTANCE
      if (!isMovingLeft && !isMovingRight) { float frictionFactor = player.onGround ? GROUND_FRICTION_FACTOR : AIR_RESISTANCE_FACTOR; player.velocityX *= powf(frictionFactor, dt * 60.0f); if (fabs(player.velocityX) < 1.0f) { player.velocityX = 0; } }
-
-    // --- 6. OTHER GAME LOGIC ---
+    // 6. OTHER GAME LOGIC
     if (player.rect.x < g_cameraX) { player.rect.x = g_cameraX; if (player.velocityX < 0) player.velocityX = 0; }
     for (auto& obs : g_obstacles) { if (!obs.isPassed && player.rect.x + player.rect.w / 2 > obs.rect.x + obs.rect.w) { obs.isPassed = true; g_score += 10; } }
-    // Collectible pickup & level up logic
-    for (auto& item : g_collectibles) {
-        if (!item.isCollected && checkRectCollision(player.rect, item.rect)) {
-            item.isCollected = true; g_itemCount++; g_totalItemCount++; g_score += 5;
-            // Level up condition
-            if (g_itemCount >= ITEMS_PER_LEVEL && g_level < MAX_LEVEL) {
-                 g_level++; g_itemCount = 0; g_maxMoveSpeed *= 1.05f;
-                 g_damageItemSpeedMultiplier *= 1.1f; // ✅ Increase damage item speed
-                 if(g_level < LEVEL_NAMES.size()) std::cout << "LEVEL UP! Level: " << LEVEL_NAMES[g_level] << ", New Max Speed: " << g_maxMoveSpeed << ", Damage Speed Multi: " << g_damageItemSpeedMultiplier << std::endl;
-            }
-        }
-    }
-    // Damage item pickup
-    for (auto& item : g_damageItems) { if (!item.isCollected && checkRectCollision(player.rect, item.rect)) { item.isCollected = true; player.hp -= 20; if (player.hp <= 0) { player.hp = 0; g_currentScene = Scene::GAME_OVER; } } }
-    // Mystery item pickup & level up
-    for (auto& item : g_mysteryItems) {
-        if (!item.isCollected && checkRectCollision(player.rect, item.rect)) {
-            item.isCollected = true; int effect = rand() % 3;
-            switch (effect) {
-                case 0: player.hp += 20; if (player.hp > 100) player.hp = 100; break;
-                case 1: g_itemCount++; g_totalItemCount++; g_score += 20;
-                        std::cout << "MYSTERY: Bonus Item! Score: " << g_score << std::endl;
-                        // Level up condition
-                        if (g_itemCount >= ITEMS_PER_LEVEL && g_level < MAX_LEVEL) {
-                            g_level++; g_itemCount = 0; g_maxMoveSpeed *= 1.05f;
-                            g_damageItemSpeedMultiplier *= 1.1f; // ✅ Increase damage item speed
-                            if(g_level < LEVEL_NAMES.size()) std::cout << "LEVEL UP! Level: " << LEVEL_NAMES[g_level] << ", New Max Speed: " << g_maxMoveSpeed << ", Damage Speed Multi: " << g_damageItemSpeedMultiplier << std::endl;
-                        } break;
-                case 2: player.hp -= 20; if (player.hp <= 0) { player.hp = 0; g_currentScene = Scene::GAME_OVER; } break;
-            }
-        }
-    }
+    for (auto& item : g_collectibles) { if (!item.isCollected && checkRectCollision(player.rect, item.rect)) { item.isCollected = true; g_itemCount++; g_totalItemCount++; g_score += 5; if (g_itemCount >= ITEMS_PER_LEVEL && g_level < MAX_LEVEL) { g_level++; g_itemCount = 0; g_maxMoveSpeed *= 1.05f; g_damageItemSpeedMultiplier *= 1.1f; if(g_level < LEVEL_NAMES.size()) std::cout << "LEVEL UP! L: " << LEVEL_NAMES[g_level] << ", Spd: " << g_maxMoveSpeed << ", Dmg Spd: " << g_damageItemSpeedMultiplier << std::endl;} } }
+    for (auto& item : g_damageItems) { if (!item.isCollected && checkRectCollision(player.rect, item.rect)) { item.isCollected = true; player.hp -= 20; if (player.hp <= 0) { player.hp = 0; g_gameInProgress = false; g_currentScene = Scene::GAME_OVER; } } }
+    for (auto& item : g_mysteryItems) { if (!item.isCollected && checkRectCollision(player.rect, item.rect)) { item.isCollected = true; int effect = rand() % 3; switch (effect) { case 0: player.hp += 20; if (player.hp > 100) player.hp = 100; break; case 1: g_itemCount++; g_totalItemCount++; g_score += 20; std::cout << "MYSTERY: Bonus Item! S: " << g_score << std::endl; if (g_itemCount >= ITEMS_PER_LEVEL && g_level < MAX_LEVEL) { g_level++; g_itemCount = 0; g_maxMoveSpeed *= 1.05f; g_damageItemSpeedMultiplier *= 1.1f; if(g_level < LEVEL_NAMES.size()) std::cout << "LEVEL UP! L: " << LEVEL_NAMES[g_level] << ", Spd: " << g_maxMoveSpeed << ", Dmg Spd: " << g_damageItemSpeedMultiplier << std::endl;} break; case 2: player.hp -= 20; if (player.hp <= 0) { player.hp = 0; g_gameInProgress = false; g_currentScene = Scene::GAME_OVER; } break; } } }
     g_cameraX = player.rect.x - 200; if (g_cameraX < 0) g_cameraX = 0;
-    if (player.rect.x >= TRACK_LENGTH && g_currentScene != Scene::GAME_OVER) { g_currentScene = Scene::FINISH; }
-    if (player.rect.y > SCREEN_HEIGHT + player.rect.h * 2 && g_currentScene != Scene::GAME_OVER) { g_currentScene = Scene::GAME_OVER; }
+    if (player.rect.x >= TRACK_LENGTH && g_currentScene != Scene::GAME_OVER) { g_gameInProgress = false; g_currentScene = Scene::FINISH; }
+    if (player.rect.y > SCREEN_HEIGHT + player.rect.h * 2 && g_currentScene != Scene::GAME_OVER) { g_gameInProgress = false; g_currentScene = Scene::GAME_OVER; }
 }
 
 
-// --- SCENE RENDERING FUNCTIONS ---
-void renderScenePlay(float dt, bool isMovingLeft, bool isMovingRight, bool isJumpHeld) {
+// ✅ --- HÀM MỚI: CHỈ VẼ THẾ GIỚI GAME ---
+void drawGameWorld() {
     SDL_SetRenderDrawColor(g_renderer, 135, 206, 250, 255); SDL_RenderClear(g_renderer);
+    // Render Background
     if(g_backgroundTexture&&g_bgWidth>0&&g_bgHeight>0){float p=0.5f,s=(float)SCREEN_HEIGHT/g_bgHeight,sw=g_bgWidth*s,o=fmod(g_cameraX*p,sw); SDL_FRect r1={-o,0,sw,(float)SCREEN_HEIGHT},r2={-o+sw,0,sw,(float)SCREEN_HEIGHT}; SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r1); SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r2); }
+    // Render Objects
     for(const auto&o:g_obstacles){ SDL_FRect r={o.rect.x-g_cameraX,o.rect.y,o.rect.w,o.rect.h}; if(g_obstacleTexture)SDL_RenderTexture(g_renderer,g_obstacleTexture,nullptr,&r); else{/*Fallback*/}}
     for(const auto&i:g_collectibles){if(!i.isCollected){SDL_FRect r={i.rect.x-g_cameraX,i.rect.y,i.rect.w,i.rect.h};if(g_collectibleTexture)SDL_RenderTexture(g_renderer,g_collectibleTexture,nullptr,&r); else{/*Fallback*/}}}
-    updateDamageItems(dt); // ✅ Update damage item positions before drawing
     for(const auto&i:g_damageItems){if(!i.isCollected){SDL_FRect r={i.rect.x-g_cameraX,i.rect.y,i.rect.w,i.rect.h};if(g_damageItemTexture)SDL_RenderTexture(g_renderer,g_damageItemTexture,nullptr,&r); else{/*Fallback*/}}}
     for(const auto&i:g_mysteryItems){if(!i.isCollected){SDL_FRect r={i.rect.x-g_cameraX,i.rect.y,i.rect.w,i.rect.h};if(g_mysteryItemTexture)SDL_RenderTexture(g_renderer,g_mysteryItemTexture,nullptr,&r); else{/*Fallback*/}}}
-    updatePlayer(dt, isMovingLeft, isMovingRight, isJumpHeld);
+    // Render Player
     SDL_FRect playerRenderRect = { player.rect.x - g_cameraX, player.rect.y, player.rect.w, player.rect.h }; SDL_RenderTexture(g_renderer, g_player, nullptr, &playerRenderRect);
-
-    // Render HUD (with level name)
+    // Render HUD
     SDL_Color tc={255,255,255,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; float c1=50,c2=250,c3=450,c4=650;
     s=TTF_RenderText_Blended(g_smallFont,"UET",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c1,20,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string it=std::to_string(g_totalItemCount);s=TTF_RenderText_Blended(g_smallFont,it.c_str(),it.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c1,50,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}
     s=TTF_RenderText_Blended(g_smallFont,"HP",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c2,20,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string ht=std::to_string(player.hp);s=TTF_RenderText_Blended(g_smallFont,ht.c_str(),ht.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c2,50,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}
     std::string levelName=(g_level>=1&&g_level<LEVEL_NAMES.size())?LEVEL_NAMES[g_level]:"LEVEL"; s=TTF_RenderText_Blended(g_smallFont,levelName.c_str(),levelName.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c3+(150-s->w)/2.0f,35,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}
-    s=TTF_RenderText_Blended(g_smallFont,"TIME",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c4,20,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} g_playTimeSeconds=(SDL_GetTicks()-g_gameStartTime)/1000; std::string tt=std::to_string(g_playTimeSeconds);s=TTF_RenderText_Blended(g_smallFont,tt.c_str(),tt.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c4,50,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}
+    s=TTF_RenderText_Blended(g_smallFont,"TIME",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c4,20,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}
+    // ✅ SỬA: Chỉ VẼ thời gian, không tính toán
+    std::string tt=std::to_string(g_playTimeSeconds);
+    s=TTF_RenderText_Blended(g_smallFont,tt.c_str(),tt.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c4,50,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}
 }
 
-void renderSceneFinish() { /* Giữ nguyên */ SDL_SetRenderDrawColor(g_renderer, 255, 215, 0, 255); SDL_RenderClear(g_renderer); SDL_Color tc={0,0,0,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; s=TTF_RenderText_Blended(g_font,"CHUC MUNG!",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,100,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string st="Vat pham: "+std::to_string(g_totalItemCount);s=TTF_RenderText_Blended(g_font,st.c_str(),st.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,200,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string tt="Thoi gian: "+std::to_string(g_playTimeSeconds)+"s";s=TTF_RenderText_Blended(g_smallFont,tt.c_str(),tt.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,300,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} s=TTF_RenderText_Blended(g_smallFont,"Bam ESC de ve Menu",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,400,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
-void renderSceneGameOver() { /* Giữ nguyên */ SDL_SetRenderDrawColor(g_renderer, 139, 0, 0, 255); SDL_RenderClear(g_renderer); SDL_Color tc={255,255,255,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; s=TTF_RenderText_Blended(g_font,"GAME OVER",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,150,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string st="Vat pham: "+std::to_string(g_totalItemCount);s=TTF_RenderText_Blended(g_smallFont,st.c_str(),st.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,300,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} s=TTF_RenderText_Blended(g_smallFont,"Bam ESC de ve Menu",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,400,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
-void renderSceneResume() { SDL_SetRenderDrawColor(g_renderer, 150, 150, 255, 255); SDL_RenderClear(g_renderer); SDL_Color tc={255,255,255,255}; SDL_Surface* s=TTF_RenderText_Blended(g_font,"PAUSED (Press P or Click to Resume)",0,tc);if(s){SDL_Texture*t=SDL_CreateTextureFromSurface(g_renderer,s); SDL_FRect tr={SCREEN_WIDTH/2.0f-s->w/2.0f,SCREEN_HEIGHT/2.0f-s->h/2.0f,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} s=TTF_RenderText_Blended(g_smallFont,"Press ESC for Menu",0,tc);if(s){SDL_Texture*t=SDL_CreateTextureFromSurface(g_renderer,s); SDL_FRect tr={SCREEN_WIDTH/2.0f-s->w/2.0f,SCREEN_HEIGHT/2.0f+50,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
+
+// --- SCENE RENDERING FUNCTIONS ---
+// ✅ SỬA: renderScenePlay (tính thời gian ở đây)
+void renderScenePlay(float dt, bool isMovingLeft, bool isMovingRight, bool isJumpHeld) {
+    // 1. Cập nhật thời gian
+    if (g_gameStartTime != 0) { // Chỉ cập nhật nếu game đã bắt đầu
+        g_playTimeSeconds = (SDL_GetTicks() - g_gameStartTime) / 1000;
+    }
+    // 2. Cập nhật logic game
+    updateDamageItems(dt);
+    updatePlayer(dt, isMovingLeft, isMovingRight, isJumpHeld);
+    // 3. Vẽ thế giới game
+    drawGameWorld();
+}
+
+void renderSceneFinish() { /* ... Giữ nguyên ... */ SDL_SetRenderDrawColor(g_renderer, 255, 215, 0, 255); SDL_RenderClear(g_renderer); SDL_Color tc={0,0,0,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; s=TTF_RenderText_Blended(g_font,"CHUC MUNG!",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,100,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string st="Vat pham: "+std::to_string(g_totalItemCount);s=TTF_RenderText_Blended(g_font,st.c_str(),st.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,200,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string tt="Thoi gian: "+std::to_string(g_playTimeSeconds)+"s";s=TTF_RenderText_Blended(g_smallFont,tt.c_str(),tt.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,300,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} s=TTF_RenderText_Blended(g_smallFont,"Bam ESC de ve Menu",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,400,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
+void renderSceneGameOver() { /* ... Giữ nguyên ... */ SDL_SetRenderDrawColor(g_renderer, 139, 0, 0, 255); SDL_RenderClear(g_renderer); SDL_Color tc={255,255,255,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; s=TTF_RenderText_Blended(g_font,"GAME OVER",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,150,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string st="Vat pham: "+std::to_string(g_totalItemCount);s=TTF_RenderText_Blended(g_smallFont,st.c_str(),st.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,300,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} s=TTF_RenderText_Blended(g_smallFont,"Bam ESC de ve Menu",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,400,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
+
+// ✅ SỬA: renderSceneResume (chỉ vẽ game world, không vẽ chữ)
+void renderSceneResume() {
+    // 1. Chỉ vẽ lại thế giới game (đông cứng)
+    drawGameWorld();
+    // 2. Không vẽ thêm gì cả
+}
+
 void renderSceneScore() { SDL_SetRenderDrawColor(g_renderer, 255, 165, 0, 255); SDL_RenderClear(g_renderer); /* Placeholder */ }
-void renderSceneMenu(Uint32 currentTime) { if(g_backgroundTexture&&g_bgWidth>0&&g_bgHeight>0){float scrollSpeed=30.0f;float dt=(currentTime>g_lastTime)?(currentTime-g_lastTime)/1000.0f:0.0f;if(dt>0.05f)dt=0.05f;g_menuBgOffsetX+=scrollSpeed*dt;float s=(float)SCREEN_HEIGHT/g_bgHeight,sw=g_bgWidth*s,o=fmod(g_menuBgOffsetX,sw);SDL_FRect r1={-o,0,sw,(float)SCREEN_HEIGHT},r2={-o+sw,0,sw,(float)SCREEN_HEIGHT};SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r1);SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r2);}else{SDL_SetRenderDrawColor(g_renderer,173,216,230,255);SDL_RenderClear(g_renderer);} if(g_logoTexture){if(g_alpha<255&&!g_shrinking){g_alpha=(Uint8)SDL_min(g_alpha+3,255);SDL_SetTextureAlphaMod(g_logoTexture,g_alpha);}else{g_shrinking=true;}if(g_shrinking){if(g_logoRect.w>100){g_logoRect.w*=0.98f;g_logoRect.h*=0.98f;g_logoRect.x=(SCREEN_WIDTH-g_logoRect.w)/2.0f;g_logoRect.y=50.0f;}else{g_logoRect.x=20.0f;g_logoRect.y=20.0f;g_logoRect.w=100.0f;g_logoRect.h=100.0f;}}SDL_RenderTexture(g_renderer,g_logoTexture,nullptr,&g_logoRect);} if(g_player){float lw=100,lh=120;SDL_FRect lr={150.0f,SCREEN_HEIGHT-lh-50.0f,lw,lh};lr.y+=sinf((float)currentTime/500.0f)*5.0f;SDL_RenderTexture(g_renderer,g_player,nullptr,&lr);} g_buttons[0].rect={350,200,180,80};g_buttons[1].rect={350,300,180,80};g_buttons[2].rect={350,400,180,80}; if(currentTime-g_startTime>2000){SDL_Color bc={255,105,180,200},tc={80,80,80,255};for(auto&b:g_buttons){renderRoundedButton(g_renderer,b,g_font,g_buttonTexture,bc,tc);}} }
+void renderSceneMenu(Uint32 currentTime) { if(g_backgroundTexture&&g_bgWidth>0&&g_bgHeight>0){float scrollSpeed=30.0f;float dt=0.0f; if (g_lastTime != 0 && currentTime > g_lastTime) { dt = (currentTime - g_lastTime) / 1000.0f; } if(dt>0.05f)dt=0.05f; g_menuBgOffsetX+=scrollSpeed*dt; float s=(float)SCREEN_HEIGHT/g_bgHeight,sw=g_bgWidth*s,o=fmod(g_menuBgOffsetX,sw);SDL_FRect r1={-o,0,sw,(float)SCREEN_HEIGHT},r2={-o+sw,0,sw,(float)SCREEN_HEIGHT};SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r1);SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r2);}
+    else {SDL_SetRenderDrawColor(g_renderer,173,216,230,255);SDL_RenderClear(g_renderer);}
+    if(g_logoTexture){if(g_alpha<255&&!g_shrinking){g_alpha=(Uint8)SDL_min(g_alpha+3,255);SDL_SetTextureAlphaMod(g_logoTexture,g_alpha);}else{g_shrinking=true;}if(g_shrinking){if(g_logoRect.w>100){g_logoRect.w*=0.98f;g_logoRect.h*=0.98f;g_logoRect.x=(SCREEN_WIDTH-g_logoRect.w)/2.0f;g_logoRect.y=50.0f;}else{g_logoRect.x=20.0f;g_logoRect.y=20.0f;g_logoRect.w=100.0f;g_logoRect.h=100.0f;}}SDL_RenderTexture(g_renderer,g_logoTexture,nullptr,&g_logoRect);}
+    if(g_player){float lw=100,lh=120;SDL_FRect lr={150.0f,SCREEN_HEIGHT-lh-50.0f,lw,lh};lr.y+=sinf((float)currentTime/500.0f)*5.0f;SDL_RenderTexture(g_renderer,g_player,nullptr,&lr);}
+    g_buttons[0].rect={350,200,180,80};g_buttons[1].rect={350,300,180,80};g_buttons[2].rect={350,400,180,80};
+    if(currentTime-g_startTime>2000){
+        SDL_Color bc={255,105,180,200},tc={80,80,80,255};
+        renderRoundedButton(g_renderer,g_buttons[0],g_font,g_buttonTexture,bc,tc); // Play
+        if (g_gameInProgress) {
+             SDL_Color resume_bc = {100, 200, 255, 220}; SDL_Color resume_tc = {255, 255, 255, 255};
+             Uint8 alpha = 128 + (Uint8)((sinf((float)currentTime / 200.0f) + 1.0f) * 64);
+             SDL_SetTextureAlphaMod(g_buttonTexture, alpha);
+             renderRoundedButton(g_renderer,g_buttons[1],g_font,g_buttonTexture,resume_bc,resume_tc);
+             SDL_SetTextureAlphaMod(g_buttonTexture, 255);
+        } else {
+            renderRoundedButton(g_renderer,g_buttons[1],g_font,g_buttonTexture,bc,tc); // Màu bình thường
+        }
+        renderRoundedButton(g_renderer,g_buttons[2],g_font,g_buttonTexture,bc,tc); // Score
+    }
+}
 
 // --- RESET FUNCTION ---
 void resetPlayer() {
     player.rect.x = 100; player.rect.y = 300;
     player.velocityX = 0; player.velocityY = 0; player.isJumping = false; player.onGround = false; player.hp = 100;
-    g_cameraX = 0; g_score = 0; g_level = 1; // Start at level 1
-    g_maxMoveSpeed = MAX_MOVE_SPEED; // Reset max speed
-    g_damageItemSpeedMultiplier = 1.0f; // ✅ Reset damage item speed multiplier
-    g_itemCount = 0; g_totalItemCount = 0; g_gameStartTime = SDL_GetTicks(); g_playTimeSeconds = 0;
+    g_cameraX = 0; g_score = 0; g_level = 1;
+    g_maxMoveSpeed = MAX_MOVE_SPEED;
+    g_damageItemSpeedMultiplier = 1.0f;
+    g_itemCount = 0; g_totalItemCount = 0;
+    g_gameStartTime = SDL_GetTicks(); // ✅ Đặt thời gian bắt đầu khi reset
+    g_playTimeSeconds = 0;            // Reset giây
+    g_gameInProgress = true;
     createObstacles(); createCollectibles(); createDamageItems(); createMysteryItems();
 }
 
@@ -330,19 +290,85 @@ int main(int argc, char* argv[]) {
     // Main Loop
     bool running = true; SDL_Event e;
     while (running) {
-        Uint64 frameStartTime = SDL_GetTicks(); float dt = (frameStartTime - g_lastTime) / 1000.0f; g_lastTime = frameStartTime; if (dt > 0.05f) dt = 0.05f;
-        Uint32 menuCurrentTime = SDL_GetTicks();
+        Uint64 frameStartTime = SDL_GetTicks();
+        float dt = 0.0f;
+        // ✅ CHỈ TÍNH dt KHI CHƠI (PLAY)
+        if (g_currentScene == Scene::PLAY) {
+             dt = (frameStartTime - g_lastTime) / 1000.0f;
+             if (dt > 0.05f) dt = 0.05f; // Cap dt
+             g_lastTime = frameStartTime; // Chỉ cập nhật lastTime khi đang chơi
+        } else {
+             // Nếu không chơi (Menu, Pause, v.v.), vẫn cập nhật lastTime để dt = 0
+             // Hoặc cập nhật dt cho Menu
+             if (g_currentScene == Scene::MENU) {
+                 dt = (frameStartTime - g_lastTime) / 1000.0f; // dt cho menu anim
+                 if (dt > 0.05f) dt = 0.05f;
+             }
+             g_lastTime = frameStartTime;
+        }
+
+        Uint32 menuCurrentTime = frameStartTime; // Dùng cho animation menu
 
         // Event Handling
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_EVENT_QUIT) running = false;
             else if (e.type == SDL_EVENT_KEY_DOWN) {
-                if (e.key.key == SDLK_ESCAPE) { if (g_currentScene == Scene::PLAY || g_currentScene == Scene::RESUME) g_currentScene = Scene::MENU; else if (g_currentScene == Scene::FINISH || g_currentScene == Scene::GAME_OVER) g_currentScene = Scene::MENU; else if (g_currentScene == Scene::MENU) running = false; }
-                else if (e.key.key == SDLK_P) { if (g_currentScene == Scene::PLAY) { g_currentScene = Scene::RESUME; std::cout << "Paused\n";} else if (g_currentScene == Scene::RESUME) { g_currentScene = Scene::PLAY; g_lastTime = SDL_GetTicks(); std::cout << "Resumed\n";} } // Pause/Resume Key
-                else if (g_currentScene == Scene::PLAY && (e.key.key == SDLK_W || e.key.key == SDLK_SPACE) && player.onGround) { player.velocityY = JUMP_INITIAL_VELOCITY; player.onGround = false; } // Jump
+                // ESC: Luôn quay về Menu
+                if (e.key.key == SDLK_ESCAPE) {
+                     if (g_currentScene != Scene::MENU) {
+                         g_currentScene = Scene::MENU;
+                         g_alpha=0; g_shrinking=false; g_logoRect={200,100,400,400};
+                         // Cập nhật lastTime ngay lập tức khi về menu
+                         g_lastTime = SDL_GetTicks();
+                     } else {
+                         running = false;
+                     }
+                }
+                // P: Chuyển đổi giữa PLAY và RESUME
+                else if (e.key.key == SDLK_P) {
+                    if (g_currentScene == Scene::PLAY) {
+                        g_currentScene = Scene::RESUME;
+                        std::cout << "Game Paused\n";
+                    } else if (g_currentScene == Scene::RESUME) {
+                        g_currentScene = Scene::PLAY;
+                        g_lastTime = SDL_GetTicks(); // QUAN TRỌNG: Reset dt
+                        std::cout << "Game Resumed\n";
+                    }
+                }
+                // Jump
+                else if (g_currentScene == Scene::PLAY && (e.key.key == SDLK_W || e.key.key == SDLK_SPACE) && player.onGround) {
+                    player.velocityY = JUMP_INITIAL_VELOCITY;
+                    player.onGround = false;
+                }
             } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) {
-                 if (g_currentScene == Scene::MENU && menuCurrentTime - g_startTime > 2000) { float mx=(float)e.button.x, my=(float)e.button.y; if (checkCollision(mx,my,g_buttons[0].rect)) { g_currentScene = Scene::PLAY; resetPlayer(); } else if (checkCollision(mx,my,g_buttons[1].rect)) { g_currentScene = Scene::PLAY; resetPlayer(); } else if (checkCollision(mx,my,g_buttons[2].rect)) { /* Score TBD */ } }
-                 else if (g_currentScene == Scene::RESUME) { g_currentScene = Scene::PLAY; g_lastTime = SDL_GetTicks(); std::cout << "Resumed via Click\n";} // Click to Resume
+                 if (g_currentScene == Scene::MENU && menuCurrentTime - g_startTime > 2000) {
+                     float mx=(float)e.button.x, my=(float)e.button.y;
+                     // Nút Play
+                     if (checkCollision(mx,my,g_buttons[0].rect)) {
+                         g_currentScene = Scene::PLAY;
+                         resetPlayer();
+                         g_lastTime = SDL_GetTicks();
+                     }
+                     // Nút Resume
+                     else if (checkCollision(mx,my,g_buttons[1].rect)) {
+                         if (g_gameInProgress) {
+                             g_currentScene = Scene::PLAY;
+                             g_lastTime = SDL_GetTicks();
+                             std::cout << "Game Resumed from Menu\n";
+                         } else {
+                             g_currentScene = Scene::PLAY;
+                             resetPlayer();
+                             g_lastTime = SDL_GetTicks();
+                         }
+                     }
+                     else if (checkCollision(mx,my,g_buttons[2].rect)) { /* Score TBD */ }
+                 }
+                 // Click để Resume
+                 else if (g_currentScene == Scene::RESUME) {
+                     g_currentScene = Scene::PLAY;
+                     g_lastTime = SDL_GetTicks();
+                     std::cout << "Resumed via Click\n";
+                 }
             }
         }
 
@@ -354,8 +380,8 @@ int main(int argc, char* argv[]) {
         // Render Current Scene
         switch (g_currentScene) {
              case Scene::MENU: renderSceneMenu(menuCurrentTime); break;
-             case Scene::PLAY: renderScenePlay(dt, isMovingLeft, isMovingRight, isJumpHeld); break; // Pass states
-             case Scene::RESUME: renderSceneResume(); break; // Draw pause screen, no update
+             case Scene::PLAY: renderScenePlay(dt, isMovingLeft, isMovingRight, isJumpHeld); break;
+             case Scene::RESUME: renderSceneResume(); break; // Chỉ vẽ, không update
              case Scene::SCORE: renderSceneScore(); break;
              case Scene::FINISH: renderSceneFinish(); break;
              case Scene::GAME_OVER: renderSceneGameOver(); break;
