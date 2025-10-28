@@ -84,6 +84,7 @@ SDL_Texture* g_player = nullptr;
 SDL_Texture* g_backgroundTexture = nullptr;
 SDL_Texture* g_damageItemTexture = nullptr;
 SDL_Texture* g_collectibleTexture = nullptr;
+SDL_Texture* g_mysteryItemTexture = nullptr; // ✅ 1. THÊM: Texture cho vật phẩm bí ẩn (mystery.png)
 float g_bgWidth = 0.0f;
 float g_bgHeight = 0.0f;
 
@@ -432,10 +433,8 @@ void renderScenePlay(float dt) {
             SDL_FRect renderRect = {item.rect.x - g_cameraX, item.rect.y, item.rect.w, item.rect.h};
 
             if (g_collectibleTexture) {
-                // Vẽ bằng texture "item.png"
                 SDL_RenderTexture(g_renderer, g_collectibleTexture, nullptr, &renderRect);
             } else {
-                // Dự phòng: Vẽ hình vuông vàng nếu texture "item.png" bị lỗi
                 SDL_SetRenderDrawColor(g_renderer, item.color.r, item.color.g, item.color.b, item.color.a);
                 SDL_RenderFillRect(g_renderer, &renderRect);
                 SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
@@ -450,10 +449,8 @@ void renderScenePlay(float dt) {
             SDL_FRect renderRect = {item.rect.x - g_cameraX, item.rect.y, item.rect.w, item.rect.h};
 
             if (g_damageItemTexture) {
-                // Vẽ bằng texture "bad.png"
                 SDL_RenderTexture(g_renderer, g_damageItemTexture, nullptr, &renderRect);
             } else {
-                // Dự phòng: Vẽ hình vuông đỏ nếu texture "bad.png" bị lỗi
                 SDL_SetRenderDrawColor(g_renderer, item.color.r, item.color.g, item.color.b, item.color.a);
                 SDL_RenderFillRect(g_renderer, &renderRect);
                 SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
@@ -462,14 +459,21 @@ void renderScenePlay(float dt) {
         }
     }
 
-    // 6. Vẽ vật phẩm (Tím)
+    // ✅ 3. SỬA: 6. Vẽ vật phẩm (Tím - Bí ẩn) - BẰNG HÌNH ẢNH
     for (const auto& item : g_mysteryItems) {
         if (!item.isCollected) {
             SDL_FRect renderRect = {item.rect.x - g_cameraX, item.rect.y, item.rect.w, item.rect.h};
-            SDL_SetRenderDrawColor(g_renderer, item.color.r, item.color.g, item.color.b, item.color.a);
-            SDL_RenderFillRect(g_renderer, &renderRect);
-            SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
-            SDL_RenderRect(g_renderer, &renderRect);
+
+            if (g_mysteryItemTexture) {
+                // Vẽ bằng texture "mystery.png"
+                SDL_RenderTexture(g_renderer, g_mysteryItemTexture, nullptr, &renderRect);
+            } else {
+                 // Dự phòng: Vẽ hình vuông tím nếu texture "mystery.png" bị lỗi
+                SDL_SetRenderDrawColor(g_renderer, item.color.r, item.color.g, item.color.b, item.color.a);
+                SDL_RenderFillRect(g_renderer, &renderRect);
+                SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
+                SDL_RenderRect(g_renderer, &renderRect);
+            }
         }
     }
 
@@ -577,6 +581,7 @@ void renderScenePlay(float dt) {
     }
 }
 
+// ... (Các hàm renderSceneFinish, renderSceneGameOver, renderSceneResume, renderSceneScore, renderSceneMenu, resetPlayer không đổi) ...
 // --- Các hàm render scene khác ---
 void renderSceneFinish() {
     SDL_SetRenderDrawColor(g_renderer, 255, 215, 0, 255);
@@ -615,7 +620,7 @@ void renderSceneFinish() {
     }
     surface = TTF_RenderText_Blended(g_smallFont, "Bam ESC de ve Menu", 0, textColor);
     if (surface) {
-        // ✅ SỬA LỖI CHÍNH TẢ Ở ĐÂY
+        // SỬA LỖI CHÍNH TẢ Ở ĐÂY
         texture = SDL_CreateTextureFromSurface(g_renderer, surface);
         textRect = {SCREEN_WIDTH/2.0f - surface->w/2.0f, 400, (float)surface->w, (float)surface->h};
         SDL_RenderTexture(g_renderer, texture, nullptr, &textRect);
@@ -776,6 +781,12 @@ int main(int argc, char* argv[]) {
         std::cout << "Failed to load Assets/item.png: " << SDL_GetError() << "\n";
     }
 
+    // ✅ 2. TẢI (LOAD) TEXTURE "mystery.png"
+    g_mysteryItemTexture = IMG_LoadTexture(g_renderer, "Assets/mystery.png");
+    if (!g_mysteryItemTexture) {
+        std::cout << "Failed to load Assets/mystery.png: " << SDL_GetError() << "\n";
+    }
+
     // Tải ảnh nền và lấy kích thước
     g_backgroundTexture = IMG_LoadTexture(g_renderer, "Assets/background.png");
     if (g_backgroundTexture) {
@@ -854,7 +865,8 @@ int main(int argc, char* argv[]) {
     if (g_player) SDL_DestroyTexture(g_player);
     if (g_backgroundTexture) SDL_DestroyTexture(g_backgroundTexture);
     if (g_damageItemTexture) SDL_DestroyTexture(g_damageItemTexture);
-    if (g_collectibleTexture) SDL_DestroyTexture(g_collectibleTexture); // HỦY (DESTROY) TEXTURE
+    if (g_collectibleTexture) SDL_DestroyTexture(g_collectibleTexture);
+    if (g_mysteryItemTexture) SDL_DestroyTexture(g_mysteryItemTexture); // ✅ 4. HỦY (DESTROY) TEXTURE
     if (g_renderer) SDL_DestroyRenderer(g_renderer);
     if (g_window) SDL_DestroyWindow(g_window);
 
