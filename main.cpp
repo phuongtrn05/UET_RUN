@@ -82,7 +82,8 @@ SDL_Texture* g_logoTexture = nullptr;
 SDL_Texture* g_buttonTexture = nullptr;
 SDL_Texture* g_player = nullptr;
 SDL_Texture* g_backgroundTexture = nullptr;
-SDL_Texture* g_damageItemTexture = nullptr; // ✅ 1. THÊM: Texture cho vật phẩm trừ HP
+SDL_Texture* g_damageItemTexture = nullptr;
+SDL_Texture* g_collectibleTexture = nullptr;
 float g_bgWidth = 0.0f;
 float g_bgHeight = 0.0f;
 
@@ -424,18 +425,26 @@ void renderScenePlay(float dt) {
         SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
         SDL_RenderRect(g_renderer, &renderRect);
     }
-    // 4. Vẽ vật phẩm (Vàng)
+
+    // 4. Vẽ vật phẩm (Vàng) - BẰNG HÌNH ẢNH
     for (const auto& item : g_collectibles) {
         if (!item.isCollected) {
             SDL_FRect renderRect = {item.rect.x - g_cameraX, item.rect.y, item.rect.w, item.rect.h};
-            SDL_SetRenderDrawColor(g_renderer, item.color.r, item.color.g, item.color.b, item.color.a);
-            SDL_RenderFillRect(g_renderer, &renderRect);
-            SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
-            SDL_RenderRect(g_renderer, &renderRect);
+
+            if (g_collectibleTexture) {
+                // Vẽ bằng texture "item.png"
+                SDL_RenderTexture(g_renderer, g_collectibleTexture, nullptr, &renderRect);
+            } else {
+                // Dự phòng: Vẽ hình vuông vàng nếu texture "item.png" bị lỗi
+                SDL_SetRenderDrawColor(g_renderer, item.color.r, item.color.g, item.color.b, item.color.a);
+                SDL_RenderFillRect(g_renderer, &renderRect);
+                SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
+                SDL_RenderRect(g_renderer, &renderRect);
+            }
         }
     }
 
-    // ✅ 3. SỬA: Vẽ vật phẩm (Đỏ) - BẰNG HÌNH ẢNH
+    // 5. Vẽ vật phẩm (Đỏ) - BẰNG HÌNH ẢNH
     for (const auto& item : g_damageItems) {
         if (!item.isCollected) {
             SDL_FRect renderRect = {item.rect.x - g_cameraX, item.rect.y, item.rect.w, item.rect.h};
@@ -568,7 +577,6 @@ void renderScenePlay(float dt) {
     }
 }
 
-// ... (Các hàm renderSceneFinish, renderSceneGameOver, renderSceneResume, renderSceneScore, renderSceneMenu, resetPlayer không đổi) ...
 // --- Các hàm render scene khác ---
 void renderSceneFinish() {
     SDL_SetRenderDrawColor(g_renderer, 255, 215, 0, 255);
@@ -607,6 +615,7 @@ void renderSceneFinish() {
     }
     surface = TTF_RenderText_Blended(g_smallFont, "Bam ESC de ve Menu", 0, textColor);
     if (surface) {
+        // ✅ SỬA LỖI CHÍNH TẢ Ở ĐÂY
         texture = SDL_CreateTextureFromSurface(g_renderer, surface);
         textRect = {SCREEN_WIDTH/2.0f - surface->w/2.0f, 400, (float)surface->w, (float)surface->h};
         SDL_RenderTexture(g_renderer, texture, nullptr, &textRect);
@@ -755,10 +764,16 @@ int main(int argc, char* argv[]) {
     g_buttonTexture = IMG_LoadTexture(g_renderer, "Assets/button.png");
     g_player = IMG_LoadTexture(g_renderer, "Assets/player.png");
 
-    // ✅ 2. TẢI (LOAD) TEXTURE "bad.png"
+    // TẢI (LOAD) TEXTURE "bad.png"
     g_damageItemTexture = IMG_LoadTexture(g_renderer, "Assets/bad.png");
     if (!g_damageItemTexture) {
         std::cout << "Failed to load Assets/bad.png: " << SDL_GetError() << "\n";
+    }
+
+    // TẢI (LOAD) TEXTURE "item.png"
+    g_collectibleTexture = IMG_LoadTexture(g_renderer, "Assets/item.png");
+    if (!g_collectibleTexture) {
+        std::cout << "Failed to load Assets/item.png: " << SDL_GetError() << "\n";
     }
 
     // Tải ảnh nền và lấy kích thước
@@ -838,7 +853,8 @@ int main(int argc, char* argv[]) {
     if (g_buttonTexture) SDL_DestroyTexture(g_buttonTexture);
     if (g_player) SDL_DestroyTexture(g_player);
     if (g_backgroundTexture) SDL_DestroyTexture(g_backgroundTexture);
-    if (g_damageItemTexture) SDL_DestroyTexture(g_damageItemTexture); // ✅ 3. HỦY (DESTROY) TEXTURE
+    if (g_damageItemTexture) SDL_DestroyTexture(g_damageItemTexture);
+    if (g_collectibleTexture) SDL_DestroyTexture(g_collectibleTexture); // HỦY (DESTROY) TEXTURE
     if (g_renderer) SDL_DestroyRenderer(g_renderer);
     if (g_window) SDL_DestroyWindow(g_window);
 
