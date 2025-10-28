@@ -8,8 +8,8 @@
 #include <cmath> // Needed for powf and fmod
 #include <ctime> // Needed for time()
 #include <cstdlib> // Needed for rand() and fabs
-#include <algorithm> // ✅ THÊM: Để sắp xếp
-#include <functional> // ✅ THÊM: Để sắp xếp (std::greater)
+#include <algorithm> // Needed for std.min, std.max
+#include <functional> // Needed for std::greater
 
 enum class Scene {
     MENU,
@@ -136,30 +136,35 @@ float g_damageItemSpeedMultiplier = 1.0f;
 const std::vector<std::string> LEVEL_NAMES = { "Unknown", "Freshman", "Sophomore", "Junior", "Senior", "Master", "Ph.D", "Associate Professor", "Professor" };
 const int MAX_LEVEL = LEVEL_NAMES.size() - 1;
 
-// ✅ High score list
+// High score list
 std::vector<int> g_highScores;
 
 // Button structure and list
 struct Button { std::string text; SDL_FRect rect; };
 std::vector<Button> g_buttons = { {"Play",{300,200,180,80}},{"Resume",{300,300,180,80}},{"Score",{300,400,180,80}} };
 
+// Level Up Effect variables
+SDL_Texture* g_levelUpTextTexture = nullptr;
+SDL_FRect g_levelUpTextRect;
+Uint32 g_levelUpTextStartTime = 0;
+const float LEVEL_UP_TEXT_VELOCITY_Y = -50.0f;
+const Uint32 LEVEL_UP_TEXT_DURATION = 2000;
+bool g_playerIsFlashing = false;
+Uint32 g_flashStartTime = 0;
+const Uint32 FLASH_DURATION = 2000;
+const Uint32 FLASH_INTERVAL = 150;
+
 // --- HELPER FUNCTIONS ---
 bool checkRectCollision(const SDL_FRect& a, const SDL_FRect& b) { return (a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y); }
 
-// ✅ HÀM MỚI: Thêm điểm cao
+// --- HIGH SCORE FUNCTION ---
 void addHighScore(int score) {
     g_highScores.push_back(score);
-    // Sắp xếp giảm dần (từ cao xuống thấp)
     std::sort(g_highScores.begin(), g_highScores.end(), std::greater<int>());
-
-    // Giới hạn danh sách (ví dụ: chỉ lưu 10 điểm cao nhất)
     const int MAX_SCORES_TO_KEEP = 10;
-    if (g_highScores.size() > MAX_SCORES_TO_KEEP) {
-        g_highScores.resize(MAX_SCORES_TO_KEEP);
-    }
+    if (g_highScores.size() > MAX_SCORES_TO_KEEP) g_highScores.resize(MAX_SCORES_TO_KEEP);
     std::cout << "Score " << score << " added to high scores." << std::endl;
 }
-
 
 // --- OBJECT CREATION FUNCTIONS ---
 void createObstacles() { g_obstacles.clear(); for (float x=800;x<TRACK_LENGTH;x+=350+(rand()%250)){int t=rand()%3;switch(t){case 0:g_obstacles.push_back(Obstacle(x,GROUND_Y-80,80,80,{139,69,19,255}));break;case 1:g_obstacles.push_back(Obstacle(x,GROUND_Y-130,70,130,{128,128,128,255}));break;case 2:g_obstacles.push_back(Obstacle(x,GROUND_Y-50,130,50,{160,82,45,255}));break;}} g_obstacles.push_back(Obstacle(TRACK_LENGTH+100,GROUND_Y-250,30,250,{255,215,0,255})); }
@@ -174,35 +179,40 @@ bool checkCollision(float x, float y, const SDL_FRect& rect) { return (x>=rect.x
 // --- DAMAGE ITEM UPDATE FUNCTION ---
 void updateDamageItems(float dt) { for (auto& item : g_damageItems) { if (!item.isCollected) { float currentSpeed = item.baseVelocityX * g_damageItemSpeedMultiplier; item.rect.x += currentSpeed * dt; if (item.baseVelocityX > 0 && item.rect.x >= item.startX + item.moveRange) { item.rect.x = item.startX + item.moveRange; item.baseVelocityX = -item.baseVelocityX; } else if (item.baseVelocityX < 0 && item.rect.x <= item.startX - item.moveRange) { item.rect.x = item.startX - item.moveRange; item.baseVelocityX = -item.baseVelocityX; } item.velocityX = item.baseVelocityX; } } }
 
-// --- PLAYER UPDATE FUNCTION ---
+// --- PLAYER UPDATE FUNCTION (V10 - Exit on Game Over) ---
 void updatePlayer(float dt, bool isMovingLeft, bool isMovingRight, bool isJumpHeld) {
-    // ... (1. HORIZONTAL MOVEMENT) ...
+    // 1. HORIZONTAL MOVEMENT
     float current_accel = MOVE_ACCELERATION; if (isMovingRight) { player.velocityX += current_accel * dt; if (player.velocityX > g_maxMoveSpeed) player.velocityX = g_maxMoveSpeed; } else if (isMovingLeft) { player.velocityX -= current_accel * dt; if (player.velocityX < -g_maxMoveSpeed) player.velocityX = -g_maxMoveSpeed; }
-    // ... (2. X-AXIS COLLISION) ...
+    // 2. X-AXIS COLLISION
     player.rect.x += player.velocityX * dt;
     for (const auto& obs : g_obstacles) { if (player.rect.y < obs.rect.y + obs.rect.h && player.rect.y + player.rect.h > obs.rect.y) { if (checkRectCollision(player.rect, obs.rect)) { if (player.velocityX > 0) player.rect.x = obs.rect.x - player.rect.w - EPSILON; else if (player.velocityX < 0) player.rect.x = obs.rect.x + obs.rect.w + EPSILON; player.velocityX = 0; break; } } }
-    // ... (3. VERTICAL MOVEMENT) ...
+    // 3. VERTICAL MOVEMENT
     float currentGravity = GRAVITY; if (isJumpHeld && player.velocityY < 0) currentGravity *= JUMP_GRAVITY_MODIFIER; player.velocityY += currentGravity * dt; if (!isJumpHeld && player.velocityY < 0) { if (player.velocityY < -150.0f) player.velocityY *= JUMP_CUT_VELOCITY_REDUCTION; }
-    // ... (4. Y-AXIS COLLISION) ...
+    // 4. Y-AXIS COLLISION
     player.rect.y += player.velocityY * dt; player.onGround = false;
     if (player.rect.y + player.rect.h > GROUND_Y) { player.rect.y = GROUND_Y - player.rect.h; if (player.velocityY > 0) player.velocityY = 0; player.onGround = true; }
     for (const auto& obs : g_obstacles) { if (player.rect.x < obs.rect.x + obs.rect.w && player.rect.x + player.rect.w > obs.rect.x) { if (checkRectCollision(player.rect, obs.rect)) { if (player.velocityY > 0) { float prevBot = (player.rect.y - player.velocityY * dt) + player.rect.h; if (prevBot <= obs.rect.y + EPSILON) { player.rect.y = obs.rect.y - player.rect.h - EPSILON; player.velocityY = 0; player.onGround = true; break; } } else if (player.velocityY < 0) { float prevTop = player.rect.y - player.velocityY * dt; if (prevTop >= obs.rect.y + obs.rect.h - EPSILON) { player.rect.y = obs.rect.y + obs.rect.h + EPSILON; player.velocityY = 0; break; } } } } }
     if (!player.onGround && fabs(player.velocityY) < GRAVITY * dt * 1.5) { SDL_FRect feetRect = player.rect; feetRect.y += EPSILON * 5; if (feetRect.y + feetRect.h >= GROUND_Y) { player.onGround = true; } else { for (const auto& obs : g_obstacles) { if (player.rect.x < obs.rect.x + obs.rect.w && player.rect.x + player.rect.w > obs.rect.x) { if(checkRectCollision(feetRect, obs.rect)){ player.onGround = true; break; } } } } if (player.onGround && player.velocityY > 0) player.velocityY = 0; }
-    // ... (5. APPLY FRICTION/AIR RESISTANCE) ...
+    // 5. APPLY FRICTION/AIR RESISTANCE
      if (!isMovingLeft && !isMovingRight) { float frictionFactor = player.onGround ? GROUND_FRICTION_FACTOR : AIR_RESISTANCE_FACTOR; player.velocityX *= powf(frictionFactor, dt * 60.0f); if (fabs(player.velocityX) < 1.0f) { player.velocityX = 0; } }
-    // ... (6. OTHER GAME LOGIC) ...
+
+    // --- 6. OTHER GAME LOGIC ---
     if (player.rect.x < g_cameraX) { player.rect.x = g_cameraX; if (player.velocityX < 0) player.velocityX = 0; }
     for (auto& obs : g_obstacles) { if (!obs.isPassed && player.rect.x + player.rect.w / 2 > obs.rect.x + obs.rect.w) { obs.isPassed = true; g_score += 10; } }
-    for (auto& item : g_collectibles) { if (!item.isCollected && checkRectCollision(player.rect, item.rect)) { item.isCollected = true; g_itemCount++; g_totalItemCount++; g_score += 5; if (g_itemCount >= ITEMS_PER_LEVEL && g_level < MAX_LEVEL) { g_level++; g_itemCount = 0; g_maxMoveSpeed *= 1.05f; g_damageItemSpeedMultiplier *= 1.1f; if(g_level < LEVEL_NAMES.size()) std::cout << "LEVEL UP! L: " << LEVEL_NAMES[g_level] << ", Spd: " << g_maxMoveSpeed << ", Dmg Spd: " << g_damageItemSpeedMultiplier << std::endl;} } }
-    for (auto& item : g_damageItems) { if (!item.isCollected && checkRectCollision(player.rect, item.rect)) { item.isCollected = true; player.hp -= 20; if (player.hp <= 0) { player.hp = 0; if(g_gameInProgress) { addHighScore(g_totalItemCount); g_gameInProgress = false; } g_currentScene = Scene::GAME_OVER; } } } // ✅ Thêm điểm
-    for (auto& item : g_mysteryItems) { if (!item.isCollected && checkRectCollision(player.rect, item.rect)) { item.isCollected = true; int effect = rand() % 3; switch (effect) { case 0: player.hp += 20; if (player.hp > 100) player.hp = 100; break; case 1: g_itemCount++; g_totalItemCount++; g_score += 20; std::cout << "MYSTERY: Bonus Item! S: " << g_score << std::endl; if (g_itemCount >= ITEMS_PER_LEVEL && g_level < MAX_LEVEL) { g_level++; g_itemCount = 0; g_maxMoveSpeed *= 1.05f; g_damageItemSpeedMultiplier *= 1.1f; if(g_level < LEVEL_NAMES.size()) std::cout << "LEVEL UP! L: " << LEVEL_NAMES[g_level] << ", Spd: " << g_maxMoveSpeed << ", Dmg Spd: " << g_damageItemSpeedMultiplier << std::endl;} break; case 2: player.hp -= 20; if (player.hp <= 0) { player.hp = 0; if(g_gameInProgress) { addHighScore(g_totalItemCount); g_gameInProgress = false; } g_currentScene = Scene::GAME_OVER; } break; } } } // ✅ Thêm điểm
+    for (auto& item : g_collectibles) { if (!item.isCollected && checkRectCollision(player.rect, item.rect)) { item.isCollected = true; g_itemCount++; g_totalItemCount++; g_score += 5; if (g_itemCount >= ITEMS_PER_LEVEL && g_level < MAX_LEVEL) { g_level++; g_itemCount = 0; g_maxMoveSpeed *= 1.05f; g_damageItemSpeedMultiplier *= 1.1f; if(g_level < LEVEL_NAMES.size()) std::cout << "LEVEL UP! L: " << LEVEL_NAMES[g_level] << ", Spd: " << g_maxMoveSpeed << ", Dmg Spd: " << g_damageItemSpeedMultiplier << std::endl; g_playerIsFlashing = true; g_flashStartTime = SDL_GetTicks(); g_levelUpTextStartTime = SDL_GetTicks(); if(g_levelUpTextTexture){float tw,th;SDL_GetTextureSize(g_levelUpTextTexture, &tw, &th); g_levelUpTextRect = {player.rect.x + (player.rect.w - tw) / 2.0f, player.rect.y - th, tw, th};} } } }
+    for (auto& item : g_damageItems) { if (!item.isCollected && checkRectCollision(player.rect, item.rect)) { item.isCollected = true; player.hp -= 20; if (player.hp <= 0) { player.hp = 0; if(g_gameInProgress) { addHighScore(g_totalItemCount); g_gameInProgress = false; } g_currentScene = Scene::GAME_OVER; return; } } } // ✅ EXIT
+    for (auto& item : g_mysteryItems) { if (!item.isCollected && checkRectCollision(player.rect, item.rect)) { item.isCollected = true; int effect = rand() % 3; switch (effect) { case 0: player.hp += 20; if (player.hp > 100) player.hp = 100; break; case 1: g_itemCount++; g_totalItemCount++; g_score += 20; std::cout << "MYSTERY: Bonus Item! S: " << g_score << std::endl; if (g_itemCount >= ITEMS_PER_LEVEL && g_level < MAX_LEVEL) { g_level++; g_itemCount = 0; g_maxMoveSpeed *= 1.05f; g_damageItemSpeedMultiplier *= 1.1f; if(g_level < LEVEL_NAMES.size()) std::cout << "LEVEL UP! L: " << LEVEL_NAMES[g_level] << ", Spd: " << g_maxMoveSpeed << ", Dmg Spd: " << g_damageItemSpeedMultiplier << std::endl; g_playerIsFlashing = true; g_flashStartTime = SDL_GetTicks(); g_levelUpTextStartTime = SDL_GetTicks(); if(g_levelUpTextTexture){float tw,th;SDL_GetTextureSize(g_levelUpTextTexture, &tw, &th); g_levelUpTextRect = {player.rect.x + (player.rect.w - tw) / 2.0f, player.rect.y - th, tw, th};} } break; case 2: player.hp -= 20; if (player.hp <= 0) { player.hp = 0; if(g_gameInProgress) { addHighScore(g_totalItemCount); g_gameInProgress = false; } g_currentScene = Scene::GAME_OVER; return; } break; } } } // ✅ EXIT
+
+    // Đặt các kiểm tra cuối cùng này sau khi đã xử lý va chạm item
+    if (player.rect.x >= TRACK_LENGTH) { if(g_gameInProgress) { addHighScore(g_totalItemCount); g_gameInProgress = false; } g_currentScene = Scene::FINISH; return; } // ✅ EXIT
+    if (player.rect.y > SCREEN_HEIGHT + player.rect.h * 2) { if(g_gameInProgress) { addHighScore(g_totalItemCount); g_gameInProgress = false; } g_currentScene = Scene::GAME_OVER; return; } // ✅ EXIT
+
+    // Chỉ cập nhật camera nếu game VẪN đang chạy
     g_cameraX = player.rect.x - 200; if (g_cameraX < 0) g_cameraX = 0;
-    if (player.rect.x >= TRACK_LENGTH && g_currentScene != Scene::GAME_OVER) { if(g_gameInProgress) { addHighScore(g_totalItemCount); g_gameInProgress = false; } g_currentScene = Scene::FINISH; } // ✅ Thêm điểm
-    if (player.rect.y > SCREEN_HEIGHT + player.rect.h * 2 && g_currentScene != Scene::GAME_OVER) { if(g_gameInProgress) { addHighScore(g_totalItemCount); g_gameInProgress = false; } g_currentScene = Scene::GAME_OVER; } // ✅ Thêm điểm
 }
 
 
-// ✅ --- HÀM VẼ THẾ GIỚI GAME ---
+// --- HÀM VẼ THẾ GIỚI GAME ---
 void drawGameWorld() {
     SDL_SetRenderDrawColor(g_renderer, 135, 206, 250, 255); SDL_RenderClear(g_renderer);
     if(g_backgroundTexture&&g_bgWidth>0&&g_bgHeight>0){float p=0.5f,s=(float)SCREEN_HEIGHT/g_bgHeight,sw=g_bgWidth*s,o=fmod(g_cameraX*p,sw); SDL_FRect r1={-o,0,sw,(float)SCREEN_HEIGHT},r2={-o+sw,0,sw,(float)SCREEN_HEIGHT}; SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r1); SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r2); }
@@ -210,100 +220,46 @@ void drawGameWorld() {
     for(const auto&i:g_collectibles){if(!i.isCollected){SDL_FRect r={i.rect.x-g_cameraX,i.rect.y,i.rect.w,i.rect.h};if(g_collectibleTexture)SDL_RenderTexture(g_renderer,g_collectibleTexture,nullptr,&r); else{/*Fallback*/}}}
     for(const auto&i:g_damageItems){if(!i.isCollected){SDL_FRect r={i.rect.x-g_cameraX,i.rect.y,i.rect.w,i.rect.h};if(g_damageItemTexture)SDL_RenderTexture(g_renderer,g_damageItemTexture,nullptr,&r); else{/*Fallback*/}}}
     for(const auto&i:g_mysteryItems){if(!i.isCollected){SDL_FRect r={i.rect.x-g_cameraX,i.rect.y,i.rect.w,i.rect.h};if(g_mysteryItemTexture)SDL_RenderTexture(g_renderer,g_mysteryItemTexture,nullptr,&r); else{/*Fallback*/}}}
+    // XỬ LÝ NHẤP NHÁY
+    if (g_playerIsFlashing) { Uint32 elapsed = SDL_GetTicks() - g_flashStartTime; if (elapsed >= FLASH_DURATION) { g_playerIsFlashing = false; SDL_SetTextureAlphaMod(g_player, 255); } else { if ((elapsed / FLASH_INTERVAL) % 2 == 0) SDL_SetTextureAlphaMod(g_player, 100); else SDL_SetTextureAlphaMod(g_player, 255); } } else { SDL_SetTextureAlphaMod(g_player, 255); }
     SDL_FRect playerRenderRect = { player.rect.x - g_cameraX, player.rect.y, player.rect.w, player.rect.h }; SDL_RenderTexture(g_renderer, g_player, nullptr, &playerRenderRect);
+    if(g_playerIsFlashing) SDL_SetTextureAlphaMod(g_player, 255); // Reset
+    // VẼ CHỮ LEVEL UP BAY LÊN
+    if (g_levelUpTextStartTime > 0 && g_levelUpTextTexture) { Uint32 elapsed = SDL_GetTicks() - g_levelUpTextStartTime; if (elapsed < LEVEL_UP_TEXT_DURATION) { float alphaPercent = 1.0f - ((float)elapsed / (float)LEVEL_UP_TEXT_DURATION); Uint8 alpha = (Uint8)(alphaPercent * 255.0f); SDL_SetTextureAlphaMod(g_levelUpTextTexture, alpha); SDL_FRect renderRect = g_levelUpTextRect; renderRect.x -= g_cameraX; SDL_RenderTexture(g_renderer, g_levelUpTextTexture, nullptr, &renderRect); SDL_SetTextureAlphaMod(g_levelUpTextTexture, 255); } else { g_levelUpTextStartTime = 0; } }
     // Render HUD
     SDL_Color tc={255,255,255,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; float c1=50,c2=250,c3=450,c4=650;
     s=TTF_RenderText_Blended(g_smallFont,"UET",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c1,20,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string it=std::to_string(g_totalItemCount);s=TTF_RenderText_Blended(g_smallFont,it.c_str(),it.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c1,50,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}
     s=TTF_RenderText_Blended(g_smallFont,"HP",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c2,20,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string ht=std::to_string(player.hp);s=TTF_RenderText_Blended(g_smallFont,ht.c_str(),ht.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c2,50,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}
     std::string levelName=(g_level>=1&&g_level<LEVEL_NAMES.size())?LEVEL_NAMES[g_level]:"LEVEL"; s=TTF_RenderText_Blended(g_smallFont,levelName.c_str(),levelName.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c3+(150-s->w)/2.0f,35,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}
     s=TTF_RenderText_Blended(g_smallFont,"TIME",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c4,20,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}
-    std::string tt=std::to_string(g_playTimeSeconds); // Chỉ vẽ, không tính toán
-    s=TTF_RenderText_Blended(g_smallFont,tt.c_str(),tt.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c4,50,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}
+    std::string tt=std::to_string(g_playTimeSeconds); s=TTF_RenderText_Blended(g_smallFont,tt.c_str(),tt.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={c4,50,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}
 }
 
 
 // --- SCENE RENDERING FUNCTIONS ---
-// ✅ SỬA: renderScenePlay (tính thời gian ở đây)
 void renderScenePlay(float dt, bool isMovingLeft, bool isMovingRight, bool isJumpHeld) {
-    if (g_gameStartTime != 0) { g_playTimeSeconds = (SDL_GetTicks() - g_gameStartTime) / 1000; } // Cập nhật thời gian
+    if (g_gameStartTime != 0) g_playTimeSeconds = (SDL_GetTicks() - g_gameStartTime) / 1000;
+    if (g_levelUpTextStartTime > 0) { Uint32 elapsed = SDL_GetTicks() - g_levelUpTextStartTime; if (elapsed < LEVEL_UP_TEXT_DURATION) g_levelUpTextRect.y += LEVEL_UP_TEXT_VELOCITY_Y * dt; }
     updateDamageItems(dt);
     updatePlayer(dt, isMovingLeft, isMovingRight, isJumpHeld);
-    drawGameWorld(); // Vẽ thế giới
-}
-
-void renderSceneFinish() { drawGameWorld(); /* Sau đó vẽ chữ "CHUC MUNG" đè lên */ SDL_Color tc={0,0,0,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; s=TTF_RenderText_Blended(g_font,"CHUC MUNG!",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,100,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string st="Vat pham: "+std::to_string(g_totalItemCount);s=TTF_RenderText_Blended(g_font,st.c_str(),st.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,200,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string tt="Thoi gian: "+std::to_string(g_playTimeSeconds)+"s";s=TTF_RenderText_Blended(g_smallFont,tt.c_str(),tt.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,300,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} s=TTF_RenderText_Blended(g_smallFont,"Bam ESC de ve Menu",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,400,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
-void renderSceneGameOver() { drawGameWorld(); /* Sau đó vẽ chữ "GAME OVER" đè lên */ SDL_Color tc={255,255,255,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; s=TTF_RenderText_Blended(g_font,"GAME OVER",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,150,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string st="Vat pham: "+std::to_string(g_totalItemCount);s=TTF_RenderText_Blended(g_smallFont,st.c_str(),st.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,300,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} s=TTF_RenderText_Blended(g_smallFont,"Bam ESC de ve Menu",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,400,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
-
-// ✅ SỬA: renderSceneResume (vẽ lại game + KHÔNG CÓ chữ)
-void renderSceneResume() {
-    // 1. Chỉ vẽ lại thế giới game (đông cứng)
     drawGameWorld();
-    // 2. KHÔNG VẼ THÊM GÌ CẢ
 }
 
-// ✅ SỬA: renderSceneScore (vẽ bảng điểm)
-void renderSceneScore() {
-    SDL_SetRenderDrawColor(g_renderer, 30, 30, 70, 255); // Nền xanh đậm
-    SDL_RenderClear(g_renderer);
-    SDL_Color titleColor = {255, 215, 0, 255}; // Vàng
-    SDL_Color scoreColor = {255, 255, 255, 255}; // Trắng
-    SDL_Color infoColor = {180, 180, 180, 255}; // Xám nhạt
-    SDL_Surface* surface = nullptr; SDL_Texture* texture = nullptr; SDL_FRect textRect;
-
-    surface = TTF_RenderText_Blended(g_font, "HIGH SCORES", 0, titleColor);
-    if (surface) { texture = SDL_CreateTextureFromSurface(g_renderer, surface); textRect = { (SCREEN_WIDTH - (float)surface->w) / 2.0f, 50, (float)surface->w, (float)surface->h }; SDL_RenderTexture(g_renderer, texture, nullptr, &textRect); SDL_DestroySurface(surface); SDL_DestroyTexture(texture); }
-
-    float currentY = 150.0f; int rank = 1;
-    if (g_highScores.empty()) {
-        surface = TTF_RenderText_Blended(g_smallFont, "No scores yet. Go play!", 0, infoColor);
-        if (surface) { texture = SDL_CreateTextureFromSurface(g_renderer, surface); textRect = { (SCREEN_WIDTH - (float)surface->w) / 2.0f, currentY, (float)surface->w, (float)surface->h }; SDL_RenderTexture(g_renderer, texture, nullptr, &textRect); SDL_DestroySurface(surface); SDL_DestroyTexture(texture); }
-    } else {
-        for (int score : g_highScores) {
-            std::string scoreLine = std::to_string(rank) + ".   " + std::to_string(score);
-            surface = TTF_RenderText_Blended(g_smallFont, scoreLine.c_str(), scoreLine.length(), scoreColor);
-            if (surface) { texture = SDL_CreateTextureFromSurface(g_renderer, surface); textRect = { (SCREEN_WIDTH / 2.0f) - 100.0f, currentY, (float)surface->w, (float)surface->h }; SDL_RenderTexture(g_renderer, texture, nullptr, &textRect); SDL_DestroySurface(surface); SDL_DestroyTexture(texture); }
-            currentY += 35.0f; rank++;
-            if (rank > 10) break; // Chỉ hiển thị top 10
-        }
-    }
-    surface = TTF_RenderText_Blended(g_smallFont, "Press ESC for Menu", 0, infoColor);
-     if (surface) { texture = SDL_CreateTextureFromSurface(g_renderer, surface); textRect = { (SCREEN_WIDTH - (float)surface->w) / 2.0f, SCREEN_HEIGHT - 60.0f, (float)surface->w, (float)surface->h }; SDL_RenderTexture(g_renderer, texture, nullptr, &textRect); SDL_DestroySurface(surface); SDL_DestroyTexture(texture); }
-}
-
-// ✅ SỬA: renderSceneMenu (thêm logic nút Resume)
-void renderSceneMenu(Uint32 currentTime) {
-    if(g_backgroundTexture&&g_bgWidth>0&&g_bgHeight>0){float scrollSpeed=30.0f;float dt=0.0f; if (g_lastTime != 0 && currentTime > g_lastTime) { dt = (currentTime - g_lastTime) / 1000.0f; } if(dt>0.05f)dt=0.05f; g_menuBgOffsetX+=scrollSpeed*dt; float s=(float)SCREEN_HEIGHT/g_bgHeight,sw=g_bgWidth*s,o=fmod(g_menuBgOffsetX,sw);SDL_FRect r1={-o,0,sw,(float)SCREEN_HEIGHT},r2={-o+sw,0,sw,(float)SCREEN_HEIGHT};SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r1);SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r2);}
-    else {SDL_SetRenderDrawColor(g_renderer,173,216,230,255);SDL_RenderClear(g_renderer);}
-    if(g_logoTexture){if(g_alpha<255&&!g_shrinking){g_alpha=(Uint8)SDL_min(g_alpha+3,255);SDL_SetTextureAlphaMod(g_logoTexture,g_alpha);}else{g_shrinking=true;}if(g_shrinking){if(g_logoRect.w>100){g_logoRect.w*=0.98f;g_logoRect.h*=0.98f;g_logoRect.x=(SCREEN_WIDTH-g_logoRect.w)/2.0f;g_logoRect.y=50.0f;}else{g_logoRect.x=20.0f;g_logoRect.y=20.0f;g_logoRect.w=100.0f;g_logoRect.h=100.0f;}}SDL_RenderTexture(g_renderer,g_logoTexture,nullptr,&g_logoRect);}
-    if(g_player){float lw=100,lh=120;SDL_FRect lr={150.0f,SCREEN_HEIGHT-lh-50.0f,lw,lh};lr.y+=sinf((float)currentTime/500.0f)*5.0f;SDL_RenderTexture(g_renderer,g_player,nullptr,&lr);}
-    g_buttons[0].rect={350,200,180,80};g_buttons[1].rect={350,300,180,80};g_buttons[2].rect={350,400,180,80};
-    if(currentTime-g_startTime>2000){
-        SDL_Color bc={255,105,180,200},tc={80,80,80,255};
-        renderRoundedButton(g_renderer,g_buttons[0],g_font,g_buttonTexture,bc,tc); // Play
-        if (g_gameInProgress) {
-             SDL_Color resume_bc = {100, 200, 255, 220}; SDL_Color resume_tc = {255, 255, 255, 255};
-             Uint8 alpha = 128 + (Uint8)((sinf((float)currentTime / 200.0f) + 1.0f) * 64);
-             SDL_SetTextureAlphaMod(g_buttonTexture, alpha);
-             renderRoundedButton(g_renderer,g_buttons[1],g_font,g_buttonTexture,resume_bc,resume_tc);
-             SDL_SetTextureAlphaMod(g_buttonTexture, 255);
-        } else {
-            renderRoundedButton(g_renderer,g_buttons[1],g_font,g_buttonTexture,bc,tc); // Màu bình thường
-        }
-        renderRoundedButton(g_renderer,g_buttons[2],g_font,g_buttonTexture,bc,tc); // Score
-    }
-}
+void renderSceneFinish() { drawGameWorld(); /* Overlay FINISH text */ SDL_Color tc={0,0,0,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; s=TTF_RenderText_Blended(g_font,"CHUC MUNG!",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,100,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string st="Vat pham: "+std::to_string(g_totalItemCount);s=TTF_RenderText_Blended(g_font,st.c_str(),st.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,200,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string tt="Thoi gian: "+std::to_string(g_playTimeSeconds)+"s";s=TTF_RenderText_Blended(g_smallFont,tt.c_str(),tt.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,300,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} s=TTF_RenderText_Blended(g_smallFont,"Bam ESC de ve Menu",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,400,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
+void renderSceneGameOver() { drawGameWorld(); /* Overlay GAME OVER text */ SDL_Color tc={255,255,255,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; s=TTF_RenderText_Blended(g_font,"GAME OVER",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,150,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string st="Vat pham: "+std::to_string(g_totalItemCount);s=TTF_RenderText_Blended(g_smallFont,st.c_str(),st.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,300,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} s=TTF_RenderText_Blended(g_smallFont,"Bam ESC de ve Menu",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,400,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
+void renderSceneResume() { drawGameWorld(); } // ✅ Chỉ vẽ lại thế giới game
+void renderSceneScore() { SDL_SetRenderDrawColor(g_renderer, 30, 30, 70, 255); SDL_RenderClear(g_renderer); SDL_Color tc1={255,215,0,255}, tc2={255,255,255,255}, tc3={180,180,180,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; s=TTF_RenderText_Blended(g_font,"HIGH SCORES",0,tc1);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={(SCREEN_WIDTH-(float)s->w)/2.0f,50,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} float y=150.0f; int r=1; if(g_highScores.empty()){s=TTF_RenderText_Blended(g_smallFont,"No scores yet. Go play!",0,tc3);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={(SCREEN_WIDTH-(float)s->w)/2.0f,y,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}}else{for(int sc:g_highScores){std::string sl=std::to_string(r)+".   "+std::to_string(sc);s=TTF_RenderText_Blended(g_smallFont,sl.c_str(),sl.length(),tc2);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={(SCREEN_WIDTH/2.0f)-100.0f,y,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}y+=35.0f;r++;if(r>10)break;}}s=TTF_RenderText_Blended(g_smallFont,"Press ESC for Menu",0,tc3);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={(SCREEN_WIDTH-(float)s->w)/2.0f,SCREEN_HEIGHT-60.0f,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
+void renderSceneMenu(Uint32 currentTime) { if(g_backgroundTexture&&g_bgWidth>0&&g_bgHeight>0){float scrollSpeed=30.0f;float dt=0.0f; if (g_lastTime != 0 && currentTime > g_lastTime) { dt = (currentTime - g_lastTime) / 1000.0f; } if(dt>0.05f)dt=0.05f; g_menuBgOffsetX+=scrollSpeed*dt; float s=(float)SCREEN_HEIGHT/g_bgHeight,sw=g_bgWidth*s,o=fmod(g_menuBgOffsetX,sw);SDL_FRect r1={-o,0,sw,(float)SCREEN_HEIGHT},r2={-o+sw,0,sw,(float)SCREEN_HEIGHT};SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r1);SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r2);} else {SDL_SetRenderDrawColor(g_renderer,173,216,230,255);SDL_RenderClear(g_renderer);} if(g_logoTexture){if(g_alpha<255&&!g_shrinking){g_alpha=(Uint8)SDL_min(g_alpha+3,255);SDL_SetTextureAlphaMod(g_logoTexture,g_alpha);}else{g_shrinking=true;}if(g_shrinking){if(g_logoRect.w>100){g_logoRect.w*=0.98f;g_logoRect.h*=0.98f;g_logoRect.x=(SCREEN_WIDTH-g_logoRect.w)/2.0f;g_logoRect.y=50.0f;}else{g_logoRect.x=20.0f;g_logoRect.y=20.0f;g_logoRect.w=100.0f;g_logoRect.h=100.0f;}}SDL_RenderTexture(g_renderer,g_logoTexture,nullptr,&g_logoRect);} if(g_player){float lw=100,lh=120;SDL_FRect lr={150.0f,SCREEN_HEIGHT-lh-50.0f,lw,lh};lr.y+=sinf((float)currentTime/500.0f)*5.0f;SDL_RenderTexture(g_renderer,g_player,nullptr,&lr);} g_buttons[0].rect={350,200,180,80};g_buttons[1].rect={350,300,180,80};g_buttons[2].rect={350,400,180,80}; if(currentTime-g_startTime>2000){ SDL_Color bc={255,105,180,200},tc={80,80,80,255}; renderRoundedButton(g_renderer,g_buttons[0],g_font,g_buttonTexture,bc,tc); if (g_gameInProgress) { SDL_Color resume_bc = {100, 200, 255, 220}; SDL_Color resume_tc = {255, 255, 255, 255}; Uint8 alpha = 128 + (Uint8)((sinf((float)currentTime / 200.0f) + 1.0f) * 64); SDL_SetTextureAlphaMod(g_buttonTexture, alpha); renderRoundedButton(g_renderer,g_buttons[1],g_font,g_buttonTexture,resume_bc,resume_tc); SDL_SetTextureAlphaMod(g_buttonTexture, 255); } else { renderRoundedButton(g_renderer,g_buttons[1],g_font,g_buttonTexture,bc,tc); } renderRoundedButton(g_renderer,g_buttons[2],g_font,g_buttonTexture,bc,tc); } }
 
 // --- RESET FUNCTION ---
 void resetPlayer() {
     player.rect.x = 100; player.rect.y = 300;
     player.velocityX = 0; player.velocityY = 0; player.isJumping = false; player.onGround = false; player.hp = 100;
     g_cameraX = 0; g_score = 0; g_level = 1;
-    g_maxMoveSpeed = MAX_MOVE_SPEED;
-    g_damageItemSpeedMultiplier = 1.0f;
+    g_maxMoveSpeed = MAX_MOVE_SPEED; g_damageItemSpeedMultiplier = 1.0f;
     g_itemCount = 0; g_totalItemCount = 0;
-    g_gameStartTime = SDL_GetTicks(); // Đặt thời gian bắt đầu
-    g_playTimeSeconds = 0;
-    g_gameInProgress = true; // Đánh dấu game đã bắt đầu
+    g_gameStartTime = SDL_GetTicks(); g_playTimeSeconds = 0;
+    g_gameInProgress = true; g_levelUpTextStartTime = 0; g_playerIsFlashing = false;
     createObstacles(); createCollectibles(); createDamageItems(); createMysteryItems();
 }
 
@@ -311,8 +267,9 @@ void resetPlayer() {
 // --- MAIN FUNCTION ---
 int main(int argc, char* argv[]) {
     // Initialization
-    if (!SDL_Init(SDL_INIT_VIDEO)) { std::cout << "SDL_Init failed: " << SDL_GetError() << "\n"; return 1; }
+    if (!SDL_Init(SDL_INIT_VIDEO)) { std::cout << "SDL_Init failed: " << SDL_GetError() << "\n"; return 1; } // Bỏ AUDIO
     if (!TTF_Init()) { std::cout << "TTF_Init failed: " << SDL_GetError() << "\n"; SDL_Quit(); return 1; }
+    // Bỏ Mix_OpenAudio
     srand((unsigned int)time(NULL));
     g_window = SDL_CreateWindow("UET_RUN", SCREEN_WIDTH, SCREEN_HEIGHT, 0);
     g_renderer = SDL_CreateRenderer(g_window, nullptr);
@@ -325,6 +282,12 @@ int main(int argc, char* argv[]) {
     // Load Fonts
     g_font = TTF_OpenFont("NotoSans-Regular.ttf", 36); g_smallFont = TTF_OpenFont("NotoSans-Regular.ttf", 24); if (!g_font || !g_smallFont) { std::cout << "Failed to load font: " << SDL_GetError() << "\n"; /* Cleanup */ if(g_renderer)SDL_DestroyRenderer(g_renderer); if(g_window)SDL_DestroyWindow(g_window); TTF_Quit(); SDL_Quit(); return 1; }
 
+    // Load Level Up Text Texture
+    SDL_Color levelUpColor = {255, 215, 0, 255}; SDL_Surface* surface = TTF_RenderText_Blended(g_font, "LEVEL UP!", 0, levelUpColor);
+    if (surface) { g_levelUpTextTexture = SDL_CreateTextureFromSurface(g_renderer, surface); SDL_DestroySurface(surface); } else { std::cout << "Failed to create Level Up text texture: " << SDL_GetError() << "\n"; }
+
+    // Bỏ Load Âm thanh
+
     g_startTime = SDL_GetTicks(); g_lastTime = SDL_GetTicks();
 
     // Main Loop
@@ -332,80 +295,20 @@ int main(int argc, char* argv[]) {
     while (running) {
         Uint64 frameStartTime = SDL_GetTicks();
         float dt = 0.0f;
-        // Chỉ tính dt nếu game đang chạy (PLAY) hoặc ở Menu (cho anim)
-        if (g_currentScene == Scene::PLAY || g_currentScene == Scene::MENU) {
-             dt = (frameStartTime - g_lastTime) / 1000.0f;
-             if (dt > 0.05f) dt = 0.05f; // Cap dt
-        }
-        // Luôn cập nhật lastTime khi ở Menu hoặc Play
-        if (g_currentScene == Scene::PLAY || g_currentScene == Scene::MENU) {
-            g_lastTime = frameStartTime;
-        }
-
+        if (g_currentScene == Scene::PLAY || g_currentScene == Scene::MENU) { dt = (frameStartTime - g_lastTime) / 1000.0f; if (dt > 0.05f) dt = 0.05f; }
+        if (g_currentScene == Scene::PLAY || g_currentScene == Scene::MENU) g_lastTime = frameStartTime; // Cập nhật lastTime cho Play và Menu
         Uint32 menuCurrentTime = frameStartTime;
 
         // Event Handling
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_EVENT_QUIT) running = false;
             else if (e.type == SDL_EVENT_KEY_DOWN) {
-                // ESC: Luôn quay về Menu
-                if (e.key.key == SDLK_ESCAPE) {
-                     if (g_currentScene != Scene::MENU) {
-                         g_currentScene = Scene::MENU;
-                         g_alpha=0; g_shrinking=false; g_logoRect={200,100,400,400};
-                         g_lastTime = SDL_GetTicks(); // Reset dt cho menu anim
-                     } else {
-                         running = false;
-                     }
-                }
-                // P: Chuyển đổi giữa PLAY và RESUME
-                else if (e.key.key == SDLK_P) {
-                    if (g_currentScene == Scene::PLAY) {
-                        g_currentScene = Scene::RESUME;
-                        std::cout << "Game Paused\n";
-                    } else if (g_currentScene == Scene::RESUME) {
-                        g_currentScene = Scene::PLAY;
-                        g_lastTime = SDL_GetTicks(); // QUAN TRỌNG: Reset dt
-                        std::cout << "Game Resumed\n";
-                    }
-                }
-                // Jump
-                else if (g_currentScene == Scene::PLAY && (e.key.key == SDLK_W || e.key.key == SDLK_SPACE) && player.onGround) {
-                    player.velocityY = JUMP_INITIAL_VELOCITY;
-                    player.onGround = false;
-                }
+                if (e.key.key == SDLK_ESCAPE) { if (g_currentScene != Scene::MENU) { g_currentScene = Scene::MENU; g_alpha=0; g_shrinking=false; g_logoRect={200,100,400,400}; g_lastTime = SDL_GetTicks(); } else { running = false; } }
+                else if (e.key.key == SDLK_P) { if (g_currentScene == Scene::PLAY) { g_currentScene = Scene::RESUME; std::cout << "Game Paused\n";} else if (g_currentScene == Scene::RESUME) { g_currentScene = Scene::PLAY; g_lastTime = SDL_GetTicks(); std::cout << "Game Resumed\n";} } // Pause/Resume
+                else if (g_currentScene == Scene::PLAY && (e.key.key == SDLK_W || e.key.key == SDLK_SPACE) && player.onGround) { player.velocityY = JUMP_INITIAL_VELOCITY; player.onGround = false; } // Jump
             } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) {
-                 if (g_currentScene == Scene::MENU && menuCurrentTime - g_startTime > 2000) {
-                     float mx=(float)e.button.x, my=(float)e.button.y;
-                     // Nút Play
-                     if (checkCollision(mx,my,g_buttons[0].rect)) {
-                         g_currentScene = Scene::PLAY;
-                         resetPlayer();
-                         g_lastTime = SDL_GetTicks();
-                     }
-                     // Nút Resume
-                     else if (checkCollision(mx,my,g_buttons[1].rect)) {
-                         if (g_gameInProgress) {
-                             g_currentScene = Scene::PLAY;
-                             g_lastTime = SDL_GetTicks();
-                             std::cout << "Game Resumed from Menu\n";
-                         } else {
-                             g_currentScene = Scene::PLAY;
-                             resetPlayer();
-                             g_lastTime = SDL_GetTicks();
-                         }
-                     }
-                     // ✅ Nút Score
-                     else if (checkCollision(mx,my,g_buttons[2].rect)) {
-                         g_currentScene = Scene::SCORE;
-                     }
-                 }
-                 // Click để Resume
-                 else if (g_currentScene == Scene::RESUME) {
-                     g_currentScene = Scene::PLAY;
-                     g_lastTime = SDL_GetTicks();
-                     std::cout << "Resumed via Click\n";
-                 }
+                 if (g_currentScene == Scene::MENU && menuCurrentTime - g_startTime > 2000) { float mx=(float)e.button.x, my=(float)e.button.y; if (checkCollision(mx,my,g_buttons[0].rect)) { g_currentScene = Scene::PLAY; resetPlayer(); g_lastTime = SDL_GetTicks(); } else if (checkCollision(mx,my,g_buttons[1].rect)) { if (g_gameInProgress) { g_currentScene = Scene::PLAY; g_lastTime = SDL_GetTicks(); std::cout << "Game Resumed from Menu\n"; } else { g_currentScene = Scene::PLAY; resetPlayer(); g_lastTime = SDL_GetTicks(); } } else if (checkCollision(mx,my,g_buttons[2].rect)) { g_currentScene = Scene::SCORE; } }
+                 else if (g_currentScene == Scene::RESUME) { g_currentScene = Scene::PLAY; g_lastTime = SDL_GetTicks(); std::cout << "Resumed via Click\n";}
             }
         }
 
@@ -418,18 +321,21 @@ int main(int argc, char* argv[]) {
         switch (g_currentScene) {
              case Scene::MENU: renderSceneMenu(menuCurrentTime); break;
              case Scene::PLAY: renderScenePlay(dt, isMovingLeft, isMovingRight, isJumpHeld); break;
-             case Scene::RESUME: renderSceneResume(); break; // Chỉ vẽ, không update
-             case Scene::SCORE: renderSceneScore(); break; // Vẽ bảng điểm
+             case Scene::RESUME: renderSceneResume(); break;
+             case Scene::SCORE: renderSceneScore(); break;
              case Scene::FINISH: renderSceneFinish(); break;
              case Scene::GAME_OVER: renderSceneGameOver(); break;
          }
-        SDL_RenderPresent(g_renderer); // Show frame
+        SDL_RenderPresent(g_renderer);
     }
 
     // Cleanup
     if (g_font) TTF_CloseFont(g_font); if (g_smallFont) TTF_CloseFont(g_smallFont);
     if (g_logoTexture) SDL_DestroyTexture(g_logoTexture); if (g_buttonTexture) SDL_DestroyTexture(g_buttonTexture); if (g_player) SDL_DestroyTexture(g_player); if (g_backgroundTexture) SDL_DestroyTexture(g_backgroundTexture); if (g_damageItemTexture) SDL_DestroyTexture(g_damageItemTexture); if (g_collectibleTexture) SDL_DestroyTexture(g_collectibleTexture); if (g_mysteryItemTexture) SDL_DestroyTexture(g_mysteryItemTexture); if (g_obstacleTexture) SDL_DestroyTexture(g_obstacleTexture);
+    if (g_levelUpTextTexture) SDL_DestroyTexture(g_levelUpTextTexture);
+    // Bỏ dọn dẹp âm thanh
     if (g_renderer) SDL_DestroyRenderer(g_renderer); if (g_window) SDL_DestroyWindow(g_window);
+    // Bỏ Mix_CloseAudio()
     TTF_Quit(); SDL_Quit();
     return 0;
 }
