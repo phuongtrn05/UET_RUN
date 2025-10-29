@@ -99,8 +99,14 @@ const float JUMP_INITIAL_VELOCITY = -780.0f;
 const float MOVE_ACCELERATION = 2000.0f;
 const float MAX_MOVE_SPEED = 320.0f;
 float g_maxMoveSpeed = MAX_MOVE_SPEED;
-const float GROUND_FRICTION_FACTOR = 0.88f;
-const float AIR_RESISTANCE_FACTOR = 0.96f;
+
+// ✅ HÃY SỬA CÁC HẰNG SỐ NÀY
+// const float GROUND_FRICTION_FACTOR = 0.88f; // (Không dùng nữa)
+// const float AIR_RESISTANCE_FACTOR = 0.96f; // (Không dùng nữa)
+// ✅ THAY BẰNG CÁC HẰNG SỐ NÀY (Giảm tốc)
+const float GROUND_DECELERATION = 2000.0f; // Giảm tốc khi ở trên mặt đất (nên = MOVE_ACCELERATION)
+const float AIR_DECELERATION = 800.0f;    // Giảm tốc khi ở trên không (nên < MOVE_ACCELERATION)
+
 const float JUMP_GRAVITY_MODIFIER = 0.6f;
 const float JUMP_CUT_VELOCITY_REDUCTION = 0.5f;
 const float EPSILON = 0.01f;
@@ -192,35 +198,228 @@ bool checkCollision(float x, float y, const SDL_FRect& rect) { return (x>=rect.x
 // --- DAMAGE ITEM UPDATE FUNCTION ---
 void updateDamageItems(float dt) { for (auto& item : g_damageItems) { if (!item.isCollected) { float currentSpeed = item.baseVelocityX * g_damageItemSpeedMultiplier; item.rect.x += currentSpeed * dt; if (item.baseVelocityX > 0 && item.rect.x >= item.startX + item.moveRange) { item.rect.x = item.startX + item.moveRange; item.baseVelocityX = -item.baseVelocityX; } else if (item.baseVelocityX < 0 && item.rect.x <= item.startX - item.moveRange) { item.rect.x = item.startX - item.moveRange; item.baseVelocityX = -item.baseVelocityX; } item.velocityX = item.baseVelocityX; } } }
 
-// --- PLAYER UPDATE FUNCTION ---
+
+// --- ✅ HÀM UPDATE PLAYER ĐÃ ĐƯỢC VIẾT LẠI HOÀN TOÀN ---
 void updatePlayer(float dt, bool isMovingLeft, bool isMovingRight, bool isJumpHeld) {
-    // 1. HORIZONTAL
-    float current_accel = MOVE_ACCELERATION; if (isMovingRight) { player.velocityX += current_accel * dt; if (player.velocityX > g_maxMoveSpeed) player.velocityX = g_maxMoveSpeed; } else if (isMovingLeft) { player.velocityX -= current_accel * dt; if (player.velocityX < -g_maxMoveSpeed) player.velocityX = -g_maxMoveSpeed; }
-    // 2. X-COLLISION
+
+    // --- 1. LOGIC DI CHUYỂN NGANG (HORIZONTAL) ---
+    // Logic "Giảm tốc" (Deceleration) mượt mà hơn
+    if (isMovingRight) {
+        // Tăng tốc sang phải
+        player.velocityX += MOVE_ACCELERATION * dt;
+        if (player.velocityX > g_maxMoveSpeed) player.velocityX = g_maxMoveSpeed;
+    } else if (isMovingLeft) {
+        // Tăng tốc sang trái
+        player.velocityX -= MOVE_ACCELERATION * dt;
+        if (player.velocityX < -g_maxMoveSpeed) player.velocityX = -g_maxMoveSpeed;
+    } else {
+        // Không nhấn phím -> Áp dụng giảm tốc (ma sát)
+        float deceleration = player.onGround ? GROUND_DECELERATION : AIR_DECELERATION;
+
+        if (player.velocityX > 0) { // Đang di chuyển sang phải
+            player.velocityX -= deceleration * dt;
+            if (player.velocityX < 0) player.velocityX = 0; // Dừng lại
+        } else if (player.velocityX < 0) { // Đang di chuyển sang trái
+            player.velocityX += deceleration * dt;
+            if (player.velocityX > 0) player.velocityX = 0; // Dừng lại
+        }
+    }
+
+    // --- 2. LOGIC DI CHUYỂN DỌC (VERTICAL) & TRỌNG LỰC ---
+
+    // Áp dụng trọng lực
+    float currentGravity = GRAVITY;
+    if (isJumpHeld && player.velocityY < 0) {
+        // Nếu đang bay lên và giữ nhảy -> "bay" cao hơn (giảm trọng lực)
+        currentGravity *= JUMP_GRAVITY_MODIFIER;
+    }
+    player.velocityY += currentGravity * dt;
+
+    // Nếu thả phím nhảy khi đang bay lên -> giảm độ cao (jump cut)
+    if (!isJumpHeld && player.velocityY < 0) {
+        if (player.velocityY < -150.0f) // Chỉ cắt nhảy nếu đang bay lên đủ nhanh
+            player.velocityY *= JUMP_CUT_VELOCITY_REDUCTION;
+    }
+
+    // --- 3. XỬ LÝ VA CHẠM (COLLISION) ---
+
+    // A. Di chuyển và Va chạm trục X
     player.rect.x += player.velocityX * dt;
-    for (const auto& obs : g_obstacles) { if (player.rect.y < obs.rect.y + obs.rect.h && player.rect.y + player.rect.h > obs.rect.y) { if (checkRectCollision(player.rect, obs.rect)) { if (player.velocityX > 0) player.rect.x = obs.rect.x - player.rect.w - EPSILON; else if (player.velocityX < 0) player.rect.x = obs.rect.x + obs.rect.w + EPSILON; player.velocityX = 0; break; } } }
-    // 3. VERTICAL
-    float currentGravity = GRAVITY; if (isJumpHeld && player.velocityY < 0) currentGravity *= JUMP_GRAVITY_MODIFIER; player.velocityY += currentGravity * dt; if (!isJumpHeld && player.velocityY < 0) { if (player.velocityY < -150.0f) player.velocityY *= JUMP_CUT_VELOCITY_REDUCTION; }
+    for (const auto& obs : g_obstacles) {
+        // Chỉ kiểm tra va chạm X nếu có khả năng va chạm Y
+        if (player.rect.y < obs.rect.y + obs.rect.h && player.rect.y + player.rect.h > obs.rect.y) {
+            if (checkRectCollision(player.rect, obs.rect)) {
+                if (player.velocityX > 0) { // Đâm vào bên trái của vật cản
+                    player.rect.x = obs.rect.x - player.rect.w - EPSILON;
+                } else if (player.velocityX < 0) { // Đâm vào bên phải của vật cản
+                    player.rect.x = obs.rect.x + obs.rect.w + EPSILON;
+                }
+                player.velocityX = 0; // Dừng di chuyển ngang
+                break; // Chỉ va chạm 1 vật cản 1 lúc
+            }
+        }
+    }
 
-    // 4. Y-AXIS COLLISION
-    player.rect.y += player.velocityY * dt; player.onGround = false;
-    if (player.rect.y + player.rect.h > GROUND_Y) { player.rect.y = GROUND_Y - player.rect.h; if (player.velocityY > 0) player.velocityY = 0; player.onGround = true; player.canDoubleJump = true; }
-    for (const auto& obs : g_obstacles) { if (player.rect.x < obs.rect.x + obs.rect.w && player.rect.x + player.rect.w > obs.rect.x) { if (checkRectCollision(player.rect, obs.rect)) { if (player.velocityY > 0) { float prevBot = (player.rect.y - player.velocityY * dt) + player.rect.h; if (prevBot <= obs.rect.y + EPSILON) { player.rect.y = obs.rect.y - player.rect.h - EPSILON; player.velocityY = 0; player.onGround = true; player.canDoubleJump = true; break; } }
-                else if (player.velocityY < 0) { float prevTop = player.rect.y - player.velocityY * dt; if (prevTop >= obs.rect.y + obs.rect.h - EPSILON) { player.rect.y = obs.rect.y + obs.rect.h + EPSILON; player.velocityY = 0; player.canDoubleJump = false; break; } } } } }
-    if (!player.onGround && fabs(player.velocityY) < GRAVITY * dt * 1.5) { SDL_FRect feetRect = player.rect; feetRect.y += EPSILON * 5; if (feetRect.y + feetRect.h >= GROUND_Y) { player.onGround = true; player.canDoubleJump = true; }
-        else { for (const auto& obs : g_obstacles) { if (player.rect.x < obs.rect.x + obs.rect.w && player.rect.x + player.rect.w > obs.rect.x) { if(checkRectCollision(feetRect, obs.rect)){ player.onGround = true; player.canDoubleJump = true; break; } } } } if (player.onGround && player.velocityY > 0) player.velocityY = 0; }
+    // B. Di chuyển và Va chạm trục Y
+    player.onGround = false; // Giả sử đang ở trên không
+    player.rect.y += player.velocityY * dt;
 
-    // 5. APPLY FRICTION/AIR RESISTANCE
-     if (!isMovingLeft && !isMovingRight) { float frictionFactor = player.onGround ? GROUND_FRICTION_FACTOR : AIR_RESISTANCE_FACTOR; player.velocityX *= powf(frictionFactor, dt * 60.0f); if (fabs(player.velocityX) < 1.0f) { player.velocityX = 0; } }
-    // 6. OTHER GAME LOGIC
-    if (player.rect.x < g_cameraX) { player.rect.x = g_cameraX; if (player.velocityX < 0) player.velocityX = 0; }
-    for (auto& obs : g_obstacles) { if (!obs.isPassed && player.rect.x + player.rect.w / 2 > obs.rect.x + obs.rect.w) { obs.isPassed = true; g_score += 10; } }
-    for (auto& item : g_collectibles) { if (!item.isCollected && checkRectCollision(player.rect, item.rect)) { item.isCollected = true; g_itemCount++; g_totalItemCount++; g_score += 5; if (g_itemCount >= ITEMS_PER_LEVEL && g_level < MAX_LEVEL) { g_level++; g_itemCount = 0; g_maxMoveSpeed *= 1.05f; g_damageItemSpeedMultiplier *= 1.1f; if(g_level < LEVEL_NAMES.size()) std::cout << "LEVEL UP! L: " << LEVEL_NAMES[g_level] << ", Spd: " << g_maxMoveSpeed << ", Dmg Spd: " << g_damageItemSpeedMultiplier << std::endl; g_playerIsFlashing = true; g_flashStartTime = SDL_GetTicks(); g_levelUpTextStartTime = SDL_GetTicks(); if(g_levelUpTextTexture){float tw,th;SDL_GetTextureSize(g_levelUpTextTexture, &tw, &th); g_levelUpTextRect = {player.rect.x + (player.rect.w - tw) / 2.0f, player.rect.y - th, tw, th};} } } }
-    for (auto& item : g_damageItems) { if (!item.isCollected && checkRectCollision(player.rect, item.rect)) { item.isCollected = true; player.hp -= 20; if (player.hp <= 0) { player.hp = 0; if(g_gameInProgress) { addHighScore(g_totalItemCount); g_gameInProgress = false; } g_currentScene = Scene::GAME_OVER; return; } } }
-    for (auto& item : g_mysteryItems) { if (!item.isCollected && checkRectCollision(player.rect, item.rect)) { item.isCollected = true; int effect = rand() % 3; switch (effect) { case 0: player.hp += 20; if (player.hp > 100) player.hp = 100; break; case 1: g_itemCount++; g_totalItemCount++; g_score += 20; std::cout << "MYSTERY: Bonus Item! S: " << g_score << std::endl; if (g_itemCount >= ITEMS_PER_LEVEL && g_level < MAX_LEVEL) { g_level++; g_itemCount = 0; g_maxMoveSpeed *= 1.05f; g_damageItemSpeedMultiplier *= 1.1f; if(g_level < LEVEL_NAMES.size()) std::cout << "LEVEL UP! L: " << LEVEL_NAMES[g_level] << ", Spd: " << g_maxMoveSpeed << ", Dmg Spd: " << g_damageItemSpeedMultiplier << std::endl; g_playerIsFlashing = true; g_flashStartTime = SDL_GetTicks(); g_levelUpTextStartTime = SDL_GetTicks(); if(g_levelUpTextTexture){float tw,th;SDL_GetTextureSize(g_levelUpTextTexture, &tw, &th); g_levelUpTextRect = {player.rect.x + (player.rect.w - tw) / 2.0f, player.rect.y - th, tw, th};} } break; case 2: player.hp -= 20; if (player.hp <= 0) { player.hp = 0; if(g_gameInProgress) { addHighScore(g_totalItemCount); g_gameInProgress = false; } g_currentScene = Scene::GAME_OVER; return; } break; } } }
-    if (player.rect.x >= TRACK_LENGTH) { if(g_gameInProgress) { addHighScore(g_totalItemCount); g_gameInProgress = false; } g_currentScene = Scene::FINISH; return; }
-    if (player.rect.y > SCREEN_HEIGHT + player.rect.h * 2) { if(g_gameInProgress) { addHighScore(g_totalItemCount); g_gameInProgress = false; } g_currentScene = Scene::GAME_OVER; return; }
-    g_cameraX = player.rect.x - 200; if (g_cameraX < 0) g_cameraX = 0;
+    // Va chạm với SÀN
+    if (player.rect.y + player.rect.h > GROUND_Y) {
+        player.rect.y = GROUND_Y - player.rect.h; // Đặt player về mặt đất
+        if (player.velocityY > 0) player.velocityY = 0; // Ngừng rơi
+        player.onGround = true;
+        player.canDoubleJump = true; // Reset nhảy đúp
+    }
+
+    // Va chạm với VẬT CẢN (Obstacles)
+    for (const auto& obs : g_obstacles) {
+        // Chỉ kiểm tra va chạm Y nếu có khả năng va chạm X
+        if (player.rect.x < obs.rect.x + obs.rect.w && player.rect.x + player.rect.w > obs.rect.x) {
+            if (checkRectCollision(player.rect, obs.rect)) {
+                if (player.velocityY > 0) { // Đang rơi xuống (đáp lên đầu vật cản)
+                    // Kiểm tra xem trước đó có ở trên vật cản không
+                    float prevBot = (player.rect.y - player.velocityY * dt) + player.rect.h;
+                    if (prevBot <= obs.rect.y + EPSILON) {
+                        player.rect.y = obs.rect.y - player.rect.h - EPSILON;
+                        player.velocityY = 0;
+                        player.onGround = true;
+                        player.canDoubleJump = true;
+                        break; // Đã tìm thấy mặt đất, không cần check nữa
+                    }
+                } else if (player.velocityY < 0) { // Đang bay lên (đập đầu vào vật cản)
+                    float prevTop = player.rect.y - player.velocityY * dt;
+                    if (prevTop >= obs.rect.y + obs.rect.h - EPSILON) {
+                        player.rect.y = obs.rect.y + obs.rect.h + EPSILON;
+                        player.velocityY = 0;
+                        player.canDoubleJump = false; // Mất quyền nhảy đúp khi đập đầu
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // --- 4. LOGIC GAME KHÁC (Item, Score, Ranh giới...) ---
+
+    // Giữ player không đi lùi khỏi camera
+    if (player.rect.x < g_cameraX) {
+        player.rect.x = g_cameraX;
+        if (player.velocityX < 0) player.velocityX = 0;
+    }
+
+    // Tính điểm khi vượt qua vật cản
+    for (auto& obs : g_obstacles) {
+        if (!obs.isPassed && player.rect.x + player.rect.w / 2 > obs.rect.x + obs.rect.w) {
+            obs.isPassed = true;
+            g_score += 10;
+        }
+    }
+
+    // Nhặt vật phẩm "UET"
+    for (auto& item : g_collectibles) {
+        if (!item.isCollected && checkRectCollision(player.rect, item.rect)) {
+            item.isCollected = true;
+            g_itemCount++;
+            g_totalItemCount++;
+            g_score += 5;
+            if (g_itemCount >= ITEMS_PER_LEVEL && g_level < MAX_LEVEL) {
+                g_level++;
+                g_itemCount = 0;
+                g_maxMoveSpeed *= 1.05f;
+                g_damageItemSpeedMultiplier *= 1.1f;
+                if(g_level < LEVEL_NAMES.size()) std::cout << "LEVEL UP! L: " << LEVEL_NAMES[g_level] << ", Spd: " << g_maxMoveSpeed << ", Dmg Spd: " << g_damageItemSpeedMultiplier << std::endl;
+                g_playerIsFlashing = true;
+                g_flashStartTime = SDL_GetTicks();
+                g_levelUpTextStartTime = SDL_GetTicks();
+                if(g_levelUpTextTexture){
+                    float tw,th;
+                    SDL_GetTextureSize(g_levelUpTextTexture, &tw, &th);
+                    g_levelUpTextRect = {player.rect.x + (player.rect.w - tw) / 2.0f, player.rect.y - th, tw, th};
+                }
+            }
+        }
+    }
+
+    // Nhặt vật phẩm "Sát thương"
+    for (auto& item : g_damageItems) {
+        if (!item.isCollected && checkRectCollision(player.rect, item.rect)) {
+            item.isCollected = true;
+            player.hp -= 20;
+            if (player.hp <= 0) {
+                player.hp = 0;
+                if(g_gameInProgress) {
+                    addHighScore(g_totalItemCount);
+                    g_gameInProgress = false;
+                }
+                g_currentScene = Scene::GAME_OVER;
+                return;
+            }
+        }
+    }
+
+    // Nhặt vật phẩm "Bí ẩn"
+    for (auto& item : g_mysteryItems) {
+        if (!item.isCollected && checkRectCollision(player.rect, item.rect)) {
+            item.isCollected = true;
+            int effect = rand() % 3;
+            switch (effect) {
+                case 0: // Hồi máu
+                    player.hp += 20; if (player.hp > 100) player.hp = 100;
+                    break;
+                case 1: // Thêm vật phẩm/điểm
+                    g_itemCount++; g_totalItemCount++; g_score += 20;
+                    std::cout << "MYSTERY: Bonus Item! S: " << g_score << std::endl;
+                    if (g_itemCount >= ITEMS_PER_LEVEL && g_level < MAX_LEVEL) {
+                        g_level++; g_itemCount = 0; g_maxMoveSpeed *= 1.05f; g_damageItemSpeedMultiplier *= 1.1f;
+                        if(g_level < LEVEL_NAMES.size()) std::cout << "LEVEL UP! L: " << LEVEL_NAMES[g_level] << ", Spd: " << g_maxMoveSpeed << ", Dmg Spd: " << g_damageItemSpeedMultiplier << std::endl;
+                        g_playerIsFlashing = true; g_flashStartTime = SDL_GetTicks(); g_levelUpTextStartTime = SDL_GetTicks();
+                        if(g_levelUpTextTexture){
+                            float tw,th;
+                            SDL_GetTextureSize(g_levelUpTextTexture, &tw, &th);
+                            g_levelUpTextRect = {player.rect.x + (player.rect.w - tw) / 2.0f, player.rect.y - th, tw, th};
+                        }
+                    }
+                    break;
+                case 2: // Mất máu
+                    player.hp -= 20;
+                    if (player.hp <= 0) {
+                        player.hp = 0;
+                        if(g_gameInProgress) {
+                            addHighScore(g_totalItemCount);
+                            g_gameInProgress = false;
+                        }
+                        g_currentScene = Scene::GAME_OVER;
+                        return;
+                    }
+                    break;
+            }
+        }
+    }
+
+    // Kiểm tra RỚT VỰC
+    if (player.rect.y > SCREEN_HEIGHT + player.rect.h * 2) {
+        if(g_gameInProgress) {
+            addHighScore(g_totalItemCount);
+            g_gameInProgress = false;
+        }
+        g_currentScene = Scene::GAME_OVER;
+        return;
+    }
+
+    // Kiểm tra VỀ ĐÍCH
+    if (player.rect.x >= TRACK_LENGTH) {
+        if(g_gameInProgress) {
+            addHighScore(g_totalItemCount);
+            g_gameInProgress = false;
+        }
+        g_currentScene = Scene::FINISH;
+        return;
+    }
+
+    // Cập nhật Camera
+    g_cameraX = player.rect.x - 200;
+    if (g_cameraX < 0) g_cameraX = 0;
 }
 
 
@@ -399,7 +598,6 @@ int main(int argc, char* argv[]) {
 
     // Load Fonts
     // ✅✅✅ ĐÃ SỬA LẠI TÊN FONT THEO ẢNH CỦA BẠN ✅✅✅
-    // (Đảm bảo file "Fredoka_SemiCondensed-Medium.ttf" nằm cùng thư mục với main.cpp)
     g_font = TTF_OpenFont("Fredoka_SemiCondensed-Medium.ttf", 36);
     g_smallFont = TTF_OpenFont("Fredoka_SemiCondensed-Medium.ttf", 24);
     if (!g_font || !g_smallFont) { std::cout << "Failed to load font: " << SDL_GetError() << "\n"; /* Cleanup */ if(g_renderer)SDL_DestroyRenderer(g_renderer); if(g_window)SDL_DestroyWindow(g_window); TTF_Quit(); SDL_Quit(); return 1; }
