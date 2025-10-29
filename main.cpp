@@ -11,10 +11,11 @@
 #include <algorithm> // Needed for std.min, std.max
 #include <functional> // Needed for std::greater
 
+// ✅ MỤC 3: THAY ĐỔI RESUME -> PAUSE
 enum class Scene {
     MENU,
     PLAY,
-    RESUME, // Pause state
+    PAUSE, // << ĐÃ SỬA
     SCORE,
     FINISH,
     GAME_OVER
@@ -29,12 +30,12 @@ struct Player {
     bool onGround;
     int hp;
     SDL_Color color;
-    bool canDoubleJump; // ✅ THÊM: Biến kiểm tra nhảy đúp
+    bool canDoubleJump;
 
-    Player() : rect{100, 400, 120, 140}, velocityX(0), velocityY(0), // Character size
+    Player() : rect{100, 400, 120, 140}, velocityX(0), velocityY(0),
              isJumping(false), onGround(false), hp(100),
              color{255, 100, 100, 255},
-             canDoubleJump(false) {} // ✅ Khởi tạo
+             canDoubleJump(false) {}
 };
 
 // ... (Structs: Obstacle, Collectible, DamageItem, MysteryItem - Giữ nguyên) ...
@@ -65,7 +66,6 @@ struct MysteryItem {
 
 
 // --- GLOBAL VARIABLES ---
-// ... (Giữ nguyên: g_window, g_renderer, fonts, textures, bg, menuBgOffset, logoRect, alpha, shrinking, startTime, scene, player, lastTime, cameraX, gameInProgress) ...
 SDL_Window* g_window = nullptr;
 SDL_Renderer* g_renderer = nullptr;
 TTF_Font* g_font = nullptr;
@@ -133,6 +133,12 @@ std::vector<int> g_highScores;
 struct Button { std::string text; SDL_FRect rect; };
 std::vector<Button> g_buttons = { {"Play",{300,200,180,80}},{"Resume",{300,300,180,80}},{"Score",{300,400,180,80}} };
 
+// ✅ MỤC 3: THÊM NÚT CHO MENU PAUSE
+std::vector<Button> g_pauseButtons = {
+    {"Tiep tuc", {310, 250, 180, 80}},
+    {"Menu chinh", {310, 350, 180, 80}}
+};
+
 // Level Up Effect variables
 SDL_Texture* g_levelUpTextTexture = nullptr;
 SDL_FRect g_levelUpTextRect;
@@ -156,31 +162,23 @@ void createDamageItems() { g_damageItems.clear();const float iw=40,ih=40,ob=15,c
 void createMysteryItems() { g_mysteryItems.clear();const float iw=40,ih=40,ob=20,ib=15;for(float x=900;x<TRACK_LENGTH-500;x+=1200+(rand()%800)){float y=GROUND_Y-160-(rand()%50);SDL_FRect nr={x,y,iw,ih};bool ol=false;for(const auto&o:g_obstacles){SDL_FRect b=o.rect;b.x-=ob;b.y-=ob;b.w+=2*ob;b.h+=2*ob;if(checkRectCollision(nr,b)){ol=true;break;}}if(ol)continue;for(const auto&c:g_collectibles){SDL_FRect b=c.rect;b.x-=ib;b.y-=ib;b.w+=2*ib;b.h+=2*ib;if(!c.isCollected&&checkRectCollision(nr,b)){ol=true;break;}}if(ol)continue;for(const auto&d:g_damageItems){SDL_FRect b=d.rect;b.x-=ib;b.y-=ib;b.w+=2*ib;b.h+=2*ib;if(!d.isCollected&&checkRectCollision(nr,b)){ol=true;break;}}if(ol)continue;g_mysteryItems.push_back(MysteryItem(x,y,iw,ih,{128,0,128,255}));}}
 
 // --- RENDER FUNCTIONS ---
-// ✅ MỤC 2: SỬA HÀM NÀY (THÊM isHovered)
+// ✅ MỤC 2: HÀM NÀY ĐÃ ĐƯỢC SỬA (THÊM isHovered)
 void renderRoundedButton(SDL_Renderer* renderer, const Button& btn, TTF_Font* font, SDL_Texture* bgTexture, SDL_Color bc, SDL_Color tc, bool isHovered) {
     if(!renderer||!font||!bgTexture)return;
 
-    // ✅ THÊM LOGIC MỚI:
-    // Thay đổi độ sáng/trong suốt của texture nút dựa trên trạng thái hover
     if (isHovered) {
-        // Sáng lên, rõ nét khi được di chuột qua
-        SDL_SetTextureColorMod(bgTexture, 255, 255, 255); // Màu gốc
-        SDL_SetTextureAlphaMod(bgTexture, 255);         // Rõ nét
+        SDL_SetTextureColorMod(bgTexture, 255, 255, 255);
+        SDL_SetTextureAlphaMod(bgTexture, 255);
     } else {
-        // Hơi tối đi và mờ đi một chút khi không được di chuột qua
-        SDL_SetTextureColorMod(bgTexture, 200, 200, 200); // Hơi xám/tối
-        SDL_SetTextureAlphaMod(bgTexture, 220);         // Hơi mờ
+        SDL_SetTextureColorMod(bgTexture, 200, 200, 200);
+        SDL_SetTextureAlphaMod(bgTexture, 220);
     }
 
-    // Vẽ texture nút với các thay đổi ở trên
     SDL_RenderTexture(renderer,bgTexture,nullptr,&btn.rect);
 
-    // ✅ THÊM: Reset texture mod về bình thường
-    // Việc này RẤT QUAN TRỌNG để không ảnh hưởng đến các lần vẽ khác
     SDL_SetTextureColorMod(bgTexture, 255, 255, 255);
     SDL_SetTextureAlphaMod(bgTexture, 255);
 
-    // Phần vẽ chữ (text) bên trên nút giữ nguyên
     SDL_Surface*s=TTF_RenderText_Blended(font,btn.text.c_str(),btn.text.length(),tc);
     if(!s)return;
     SDL_Texture*t=SDL_CreateTextureFromSurface(renderer,s);
@@ -206,11 +204,11 @@ void updatePlayer(float dt, bool isMovingLeft, bool isMovingRight, bool isJumpHe
 
     // 4. Y-AXIS COLLISION
     player.rect.y += player.velocityY * dt; player.onGround = false;
-    if (player.rect.y + player.rect.h > GROUND_Y) { player.rect.y = GROUND_Y - player.rect.h; if (player.velocityY > 0) player.velocityY = 0; player.onGround = true; player.canDoubleJump = true; } // ✅ Reset double jump on ground
-    for (const auto& obs : g_obstacles) { if (player.rect.x < obs.rect.x + obs.rect.w && player.rect.x + player.rect.w > obs.rect.x) { if (checkRectCollision(player.rect, obs.rect)) { if (player.velocityY > 0) { float prevBot = (player.rect.y - player.velocityY * dt) + player.rect.h; if (prevBot <= obs.rect.y + EPSILON) { player.rect.y = obs.rect.y - player.rect.h - EPSILON; player.velocityY = 0; player.onGround = true; player.canDoubleJump = true; break; } } // ✅ Reset double jump on obstacle
-                else if (player.velocityY < 0) { float prevTop = player.rect.y - player.velocityY * dt; if (prevTop >= obs.rect.y + obs.rect.h - EPSILON) { player.rect.y = obs.rect.y + obs.rect.h + EPSILON; player.velocityY = 0; player.canDoubleJump = false; break; } } } } } // ✅ Lose double jump on bonk
-    if (!player.onGround && fabs(player.velocityY) < GRAVITY * dt * 1.5) { SDL_FRect feetRect = player.rect; feetRect.y += EPSILON * 5; if (feetRect.y + feetRect.h >= GROUND_Y) { player.onGround = true; player.canDoubleJump = true; } // ✅ Reset double jump
-        else { for (const auto& obs : g_obstacles) { if (player.rect.x < obs.rect.x + obs.rect.w && player.rect.x + player.rect.w > obs.rect.x) { if(checkRectCollision(feetRect, obs.rect)){ player.onGround = true; player.canDoubleJump = true; break; } } } } if (player.onGround && player.velocityY > 0) player.velocityY = 0; } // ✅ Reset double jump
+    if (player.rect.y + player.rect.h > GROUND_Y) { player.rect.y = GROUND_Y - player.rect.h; if (player.velocityY > 0) player.velocityY = 0; player.onGround = true; player.canDoubleJump = true; }
+    for (const auto& obs : g_obstacles) { if (player.rect.x < obs.rect.x + obs.rect.w && player.rect.x + player.rect.w > obs.rect.x) { if (checkRectCollision(player.rect, obs.rect)) { if (player.velocityY > 0) { float prevBot = (player.rect.y - player.velocityY * dt) + player.rect.h; if (prevBot <= obs.rect.y + EPSILON) { player.rect.y = obs.rect.y - player.rect.h - EPSILON; player.velocityY = 0; player.onGround = true; player.canDoubleJump = true; break; } }
+                else if (player.velocityY < 0) { float prevTop = player.rect.y - player.velocityY * dt; if (prevTop >= obs.rect.y + obs.rect.h - EPSILON) { player.rect.y = obs.rect.y + obs.rect.h + EPSILON; player.velocityY = 0; player.canDoubleJump = false; break; } } } } }
+    if (!player.onGround && fabs(player.velocityY) < GRAVITY * dt * 1.5) { SDL_FRect feetRect = player.rect; feetRect.y += EPSILON * 5; if (feetRect.y + feetRect.h >= GROUND_Y) { player.onGround = true; player.canDoubleJump = true; }
+        else { for (const auto& obs : g_obstacles) { if (player.rect.x < obs.rect.x + obs.rect.w && player.rect.x + player.rect.w > obs.rect.x) { if(checkRectCollision(feetRect, obs.rect)){ player.onGround = true; player.canDoubleJump = true; break; } } } } if (player.onGround && player.velocityY > 0) player.velocityY = 0; }
 
     // 5. APPLY FRICTION/AIR RESISTANCE
      if (!isMovingLeft && !isMovingRight) { float frictionFactor = player.onGround ? GROUND_FRICTION_FACTOR : AIR_RESISTANCE_FACTOR; player.velocityX *= powf(frictionFactor, dt * 60.0f); if (fabs(player.velocityX) < 1.0f) { player.velocityX = 0; } }
@@ -289,12 +287,47 @@ void renderScenePlay(float dt, bool isMovingLeft, bool isMovingRight, bool isJum
 
 void renderSceneFinish() { drawGameWorld(); /* Overlay FINISH text */ SDL_Color tc={0,0,0,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; s=TTF_RenderText_Blended(g_font,"CHUC MUNG!",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,100,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string st="Vat pham: "+std::to_string(g_totalItemCount);s=TTF_RenderText_Blended(g_font,st.c_str(),st.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,200,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string tt="Thoi gian: "+std::to_string(g_playTimeSeconds)+"s";s=TTF_RenderText_Blended(g_smallFont,tt.c_str(),tt.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,300,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} s=TTF_RenderText_Blended(g_smallFont,"Bam ESC de ve Menu",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,400,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
 void renderSceneGameOver() { drawGameWorld(); /* Overlay GAME OVER text */ SDL_Color tc={255,255,255,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; s=TTF_RenderText_Blended(g_font,"GAME OVER",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,150,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string st="Vat pham: "+std::to_string(g_totalItemCount);s=TTF_RenderText_Blended(g_smallFont,st.c_str(),st.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,300,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} s=TTF_RenderText_Blended(g_smallFont,"Bam ESC de ve Menu",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,400,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
-void renderSceneResume() { drawGameWorld(); }
+
+// ✅ MỤC 3: XÓA HÀM `renderSceneResume()` CŨ
+
+// ✅ MỤC 3: THÊM HÀM `renderScenePause()` MỚI
+void renderScenePause() {
+    // 1. Vẽ thế giới game bị dừng ở đằng sau
+    drawGameWorld();
+
+    // 2. Vẽ lớp phủ mờ (overlay)
+    SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 150); // Màu đen, bán trong suốt
+    SDL_FRect overlayRect = {0, 0, (float)SCREEN_WIDTH, (float)SCREEN_HEIGHT};
+    SDL_RenderFillRect(g_renderer, &overlayRect);
+
+    // 3. Vẽ chữ "Tam dung"
+    SDL_Color tc = {255, 255, 255, 255};
+    SDL_Surface* s = TTF_RenderText_Blended(g_font, "TAM DUNG", 0, tc);
+    if (s) {
+        SDL_Texture* t = SDL_CreateTextureFromSurface(g_renderer, s);
+        SDL_FRect tr = {(SCREEN_WIDTH - s->w) / 2.0f, 150, (float)s->w, (float)s->h};
+        SDL_RenderTexture(g_renderer, t, nullptr, &tr);
+        SDL_DestroySurface(s);
+        SDL_DestroyTexture(t);
+    }
+
+    // 4. Vẽ các nút (có hiệu ứng hover)
+    float mouseX, mouseY;
+    SDL_GetMouseState(&mouseX, &mouseY);
+    SDL_Color bc = {255, 105, 180, 200}, btn_tc = {80, 80, 80, 255};
+
+    bool hoverResume = checkCollision(mouseX, mouseY, g_pauseButtons[0].rect);
+    renderRoundedButton(g_renderer, g_pauseButtons[0], g_font, g_buttonTexture, bc, btn_tc, hoverResume);
+
+    bool hoverMenu = checkCollision(mouseX, mouseY, g_pauseButtons[1].rect);
+    renderRoundedButton(g_renderer, g_pauseButtons[1], g_font, g_buttonTexture, bc, btn_tc, hoverMenu);
+}
+
+
 void renderSceneScore() { SDL_SetRenderDrawColor(g_renderer, 30, 30, 70, 255); SDL_RenderClear(g_renderer); SDL_Color tc1={255,215,0,255}, tc2={255,255,255,255}, tc3={180,180,180,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; s=TTF_RenderText_Blended(g_font,"HIGH SCORES",0,tc1);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={(SCREEN_WIDTH-(float)s->w)/2.0f,50,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} float y=150.0f; int r=1; if(g_highScores.empty()){s=TTF_RenderText_Blended(g_smallFont,"No scores yet. Go play!",0,tc3);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={(SCREEN_WIDTH-(float)s->w)/2.0f,y,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}}else{for(int sc:g_highScores){std::string sl=std::to_string(r)+".   "+std::to_string(sc);s=TTF_RenderText_Blended(g_smallFont,sl.c_str(),sl.length(),tc2);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={(SCREEN_WIDTH/2.0f)-100.0f,y,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}y+=35.0f;r++;if(r>10)break;}}s=TTF_RenderText_Blended(g_smallFont,"Press ESC for Menu",0,tc3);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={(SCREEN_WIDTH-(float)s->w)/2.0f,SCREEN_HEIGHT-60.0f,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
 
-// ✅ MỤC 2: SỬA HÀM NÀY
+// ✅ MỤC 2: HÀM NÀY ĐÃ ĐƯỢC SỬA
 void renderSceneMenu(Uint32 currentTime) {
-    // ... (Phần code vẽ background, logo, player giữ nguyên) ...
     if(g_backgroundTexture&&g_bgWidth>0&&g_bgHeight>0){float scrollSpeed=30.0f;float dt=0.0f; if (g_lastTime != 0 && currentTime > g_lastTime) { dt = (currentTime - g_lastTime) / 1000.0f; } if(dt>0.05f)dt=0.05f; g_menuBgOffsetX+=scrollSpeed*dt; float s=(float)SCREEN_HEIGHT/g_bgHeight,sw=g_bgWidth*s,o=fmod(g_menuBgOffsetX,sw);SDL_FRect r1={-o,0,sw,(float)SCREEN_HEIGHT},r2={-o+sw,0,sw,(float)SCREEN_HEIGHT};SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r1);SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r2);} else {SDL_SetRenderDrawColor(g_renderer,173,216,230,255);SDL_RenderClear(g_renderer);}
     if(g_logoTexture){if(g_alpha<255&&!g_shrinking){g_alpha=(Uint8)SDL_min(g_alpha+3,255);SDL_SetTextureAlphaMod(g_logoTexture,g_alpha);}else{g_shrinking=true;}if(g_shrinking){if(g_logoRect.w>100){g_logoRect.w*=0.98f;g_logoRect.h*=0.98f;g_logoRect.x=(SCREEN_WIDTH-g_logoRect.w)/2.0f;g_logoRect.y=50.0f;}else{g_logoRect.x=20.0f;g_logoRect.y=20.0f;g_logoRect.w=100.0f;g_logoRect.h=100.0f;}}SDL_RenderTexture(g_renderer,g_logoTexture,nullptr,&g_logoRect);}
     if(g_player){float lw=100,lh=120;SDL_FRect lr={150.0f,SCREEN_HEIGHT-lh-50.0f,lw,lh};lr.y+=sinf((float)currentTime/500.0f)*5.0f;SDL_RenderTexture(g_renderer,g_player,nullptr,&lr);}
@@ -304,38 +337,30 @@ void renderSceneMenu(Uint32 currentTime) {
     g_buttons[2].rect={350,400,180,80};
 
     if(currentTime-g_startTime>2000){
-        // ✅ THÊM: Lấy vị trí chuột
         float mouseX, mouseY;
         SDL_GetMouseState(&mouseX, &mouseY);
 
         SDL_Color bc={255,105,180,200}, tc={80,80,80,255};
 
-        // --- Vẽ Nút Play ---
-        // ✅ SỬA: Kiểm tra hover và truyền vào hàm
         bool hoverPlay = checkCollision(mouseX, mouseY, g_buttons[0].rect);
         renderRoundedButton(g_renderer, g_buttons[0], g_font, g_buttonTexture, bc, tc, hoverPlay);
 
-        // --- Vẽ Nút Resume ---
-        // ✅ SỬA: Kiểm tra hover trước
         bool hoverResume = checkCollision(mouseX, mouseY, g_buttons[1].rect);
         if (g_gameInProgress) {
             SDL_Color resume_bc = {100, 200, 255, 220};
             SDL_Color resume_tc = {255, 255, 255, 255};
 
-            // ✅ SỬA: Chỉ nhấp nháy khi KHÔNG hover
             if (!hoverResume) {
                 Uint8 alpha = 128 + (Uint8)((sinf((float)currentTime / 200.0f) + 1.0f) * 64);
                 SDL_SetTextureAlphaMod(g_buttonTexture, alpha);
             }
 
-            renderRoundedButton(g_renderer, g_buttons[1], g_font, g_buttonTexture, resume_bc, resume_tc, hoverResume); // Truyền trạng thái hover
+            renderRoundedButton(g_renderer, g_buttons[1], g_font, g_buttonTexture, resume_bc, resume_tc, hoverResume);
             SDL_SetTextureAlphaMod(g_buttonTexture, 255);
         } else {
-            renderRoundedButton(g_renderer, g_buttons[1], g_font, g_buttonTexture, bc, tc, hoverResume); // Truyền trạng thái hover
+            renderRoundedButton(g_renderer, g_buttons[1], g_font, g_buttonTexture, bc, tc, hoverResume);
         }
 
-        // --- Vẽ Nút Score ---
-        // ✅ SỬA: Kiểm tra hover và truyền vào hàm
         bool hoverScore = checkCollision(mouseX, mouseY, g_buttons[2].rect);
         renderRoundedButton(g_renderer, g_buttons[2], g_font, g_buttonTexture, bc, tc, hoverScore);
     }
@@ -346,7 +371,7 @@ void renderSceneMenu(Uint32 currentTime) {
 void resetPlayer() {
     player.rect.x = 100; player.rect.y = 300;
     player.velocityX = 0; player.velocityY = 0; player.isJumping = false; player.onGround = false; player.hp = 100;
-    player.canDoubleJump = false; // ✅ Reset double jump
+    player.canDoubleJump = false;
     g_cameraX = 0; g_score = 0; g_level = 1;
     g_maxMoveSpeed = MAX_MOVE_SPEED; g_damageItemSpeedMultiplier = 1.0f;
     g_itemCount = 0; g_totalItemCount = 0;
@@ -373,7 +398,11 @@ int main(int argc, char* argv[]) {
     g_heartEmptyTexture = IMG_LoadTexture(g_renderer, "Assets/heart_empty.png"); if (!g_heartEmptyTexture) std::cout << "Failed to load heart_empty.png: " << SDL_GetError() << "\n";
 
     // Load Fonts
-    g_font = TTF_OpenFont("NotoSans-Regular.ttf", 36); g_smallFont = TTF_OpenFont("NotoSans-Regular.ttf", 24); if (!g_font || !g_smallFont) { std::cout << "Failed to load font: " << SDL_GetError() << "\n"; /* Cleanup */ if(g_renderer)SDL_DestroyRenderer(g_renderer); if(g_window)SDL_DestroyWindow(g_window); TTF_Quit(); SDL_Quit(); return 1; }
+    // ✅✅✅ ĐÃ SỬA LẠI TÊN FONT THEO ẢNH CỦA BẠN ✅✅✅
+    // (Đảm bảo file "Fredoka_SemiCondensed-Medium.ttf" nằm cùng thư mục với main.cpp)
+    g_font = TTF_OpenFont("Fredoka_SemiCondensed-Medium.ttf", 36);
+    g_smallFont = TTF_OpenFont("Fredoka_SemiCondensed-Medium.ttf", 24);
+    if (!g_font || !g_smallFont) { std::cout << "Failed to load font: " << SDL_GetError() << "\n"; /* Cleanup */ if(g_renderer)SDL_DestroyRenderer(g_renderer); if(g_window)SDL_DestroyWindow(g_window); TTF_Quit(); SDL_Quit(); return 1; }
 
     // Load Level Up Text Texture
     SDL_Color levelUpColor = {255, 215, 0, 255}; SDL_Surface* surface = TTF_RenderText_Blended(g_font, "LEVEL UP!", 0, levelUpColor);
@@ -386,31 +415,81 @@ int main(int argc, char* argv[]) {
     while (running) {
         Uint64 frameStartTime = SDL_GetTicks();
         float dt = 0.0f;
-        if (g_currentScene == Scene::PLAY || g_currentScene == Scene::MENU) { dt = (frameStartTime - g_lastTime) / 1000.0f; if (dt > 0.05f) dt = 0.05f; }
+        // ✅ MỤC 3: SỬA ĐỂ PAUSE KHÔNG TÍNH dt
+        if (g_currentScene == Scene::PLAY || g_currentScene == Scene::MENU) {
+            dt = (frameStartTime - g_lastTime) / 1000.0f;
+            if (dt > 0.05f) dt = 0.05f;
+        }
         if (g_currentScene == Scene::PLAY || g_currentScene == Scene::MENU) g_lastTime = frameStartTime;
+
         Uint32 menuCurrentTime = frameStartTime;
 
         // Event Handling
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_EVENT_QUIT) running = false;
             else if (e.type == SDL_EVENT_KEY_DOWN) {
-                if (e.key.key == SDLK_ESCAPE) { if (g_currentScene != Scene::MENU) { g_currentScene = Scene::MENU; g_alpha=0; g_shrinking=false; g_logoRect={200,100,400,400}; g_lastTime = SDL_GetTicks(); } else { running = false; } }
-                else if (e.key.key == SDLK_P) { if (g_currentScene == Scene::PLAY) { g_currentScene = Scene::RESUME; std::cout << "Game Paused\n";} else if (g_currentScene == Scene::RESUME) { g_currentScene = Scene::PLAY; g_lastTime = SDL_GetTicks(); std::cout << "Game Resumed\n";} }
+                // ✅ MỤC 3: SỬA LOGIC PHÍM ESC
+                if (e.key.key == SDLK_ESCAPE) {
+                    if (g_currentScene == Scene::PLAY) {
+                        g_currentScene = Scene::PAUSE; // Đang chơi -> Tạm dừng
+                    }
+                    else if (g_currentScene != Scene::MENU) {
+                        // Đang ở Pause, Score, Finish, Game Over -> Về Menu
+                        g_currentScene = Scene::MENU;
+                        g_alpha=0; g_shrinking=false; g_logoRect={200,100,400,400}; g_lastTime = SDL_GetTicks();
+                    } else {
+                        running = false; // Đang ở Menu -> Thoát
+                    }
+                }
+                // ✅ MỤC 3: SỬA LOGIC PHÍM P
+                else if (e.key.key == SDLK_P) {
+                    if (g_currentScene == Scene::PLAY) {
+                        g_currentScene = Scene::PAUSE;
+                        std::cout << "Game Paused\n";
+                    } else if (g_currentScene == Scene::PAUSE) {
+                        g_currentScene = Scene::PLAY;
+                        g_lastTime = SDL_GetTicks();
+                        std::cout << "Game Resumed\n";
+                    }
+                }
 
-                // ✅ SỬA: LOGIC NHẢY ĐÚP
                 else if (g_currentScene == Scene::PLAY && (e.key.key == SDLK_W || e.key.key == SDLK_SPACE)) {
-                    if (player.onGround) { // Nhảy lần 1 (từ mặt đất)
+                    if (player.onGround) {
                         player.velocityY = JUMP_INITIAL_VELOCITY;
                         player.onGround = false;
-                        player.canDoubleJump = true; // Cho phép nhảy đúp
-                    } else if (player.canDoubleJump) { // Nhảy lần 2 (đang trên không)
-                        player.velocityY = JUMP_INITIAL_VELOCITY; // Nhảy mạnh như lần 1
-                        player.canDoubleJump = false; // Hết quyền nhảy đúp
+                        player.canDoubleJump = true;
+                    } else if (player.canDoubleJump) {
+                        player.velocityY = JUMP_INITIAL_VELOCITY;
+                        player.canDoubleJump = false;
                     }
                 }
             } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) {
-                 if (g_currentScene == Scene::MENU && menuCurrentTime - g_startTime > 2000) { float mx=(float)e.button.x, my=(float)e.button.y; if (checkCollision(mx,my,g_buttons[0].rect)) { g_currentScene = Scene::PLAY; resetPlayer(); g_lastTime = SDL_GetTicks(); } else if (checkCollision(mx,my,g_buttons[1].rect)) { if (g_gameInProgress) { g_currentScene = Scene::PLAY; g_lastTime = SDL_GetTicks(); std::cout << "Game Resumed from Menu\n"; } else { g_currentScene = Scene::PLAY; resetPlayer(); g_lastTime = SDL_GetTicks(); } } else if (checkCollision(mx,my,g_buttons[2].rect)) { g_currentScene = Scene::SCORE; } }
-                 else if (g_currentScene == Scene::RESUME) { g_currentScene = Scene::PLAY; g_lastTime = SDL_GetTicks(); std::cout << "Resumed via Click\n";}
+                 // ✅ MỤC 3: Di chuyển khai báo mx, my ra ngoài
+                 float mx=(float)e.button.x, my=(float)e.button.y;
+
+                 if (g_currentScene == Scene::MENU && menuCurrentTime - g_startTime > 2000) {
+                     if (checkCollision(mx,my,g_buttons[0].rect)) {
+                         g_currentScene = Scene::PLAY; resetPlayer(); g_lastTime = SDL_GetTicks();
+                     } else if (checkCollision(mx,my,g_buttons[1].rect)) {
+                         if (g_gameInProgress) {
+                             g_currentScene = Scene::PLAY; g_lastTime = SDL_GetTicks(); std::cout << "Game Resumed from Menu\n";
+                         } else {
+                             g_currentScene = Scene::PLAY; resetPlayer(); g_lastTime = SDL_GetTicks();
+                         }
+                     } else if (checkCollision(mx,my,g_buttons[2].rect)) {
+                         g_currentScene = Scene::SCORE;
+                     }
+                 }
+                 // ✅ MỤC 3: THÊM LOGIC CLICK CHO SCENE::PAUSE
+                 else if (g_currentScene == Scene::PAUSE) {
+                    if (checkCollision(mx, my, g_pauseButtons[0].rect)) { // Nút "Tiep tuc"
+                        g_currentScene = Scene::PLAY;
+                        g_lastTime = SDL_GetTicks();
+                    } else if (checkCollision(mx, my, g_pauseButtons[1].rect)) { // Nút "Menu chinh"
+                        g_currentScene = Scene::MENU;
+                        g_alpha=0; g_shrinking=false; g_logoRect={200,100,400,400}; g_lastTime = SDL_GetTicks();
+                    }
+                 }
             }
         }
 
@@ -423,7 +502,8 @@ int main(int argc, char* argv[]) {
         switch (g_currentScene) {
             case Scene::MENU: renderSceneMenu(menuCurrentTime); break;
             case Scene::PLAY: renderScenePlay(dt, isMovingLeft, isMovingRight, isJumpHeld); break;
-            case Scene::RESUME: renderSceneResume(); break;
+            // ✅ MỤC 3: THAY THẾ RESUME BẰNG PAUSE
+            case Scene::PAUSE: renderScenePause(); break;
             case Scene::SCORE: renderSceneScore(); break;
             case Scene::FINISH: renderSceneFinish(); break;
             case Scene::GAME_OVER: renderSceneGameOver(); break;
