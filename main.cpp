@@ -156,7 +156,39 @@ void createDamageItems() { g_damageItems.clear();const float iw=40,ih=40,ob=15,c
 void createMysteryItems() { g_mysteryItems.clear();const float iw=40,ih=40,ob=20,ib=15;for(float x=900;x<TRACK_LENGTH-500;x+=1200+(rand()%800)){float y=GROUND_Y-160-(rand()%50);SDL_FRect nr={x,y,iw,ih};bool ol=false;for(const auto&o:g_obstacles){SDL_FRect b=o.rect;b.x-=ob;b.y-=ob;b.w+=2*ob;b.h+=2*ob;if(checkRectCollision(nr,b)){ol=true;break;}}if(ol)continue;for(const auto&c:g_collectibles){SDL_FRect b=c.rect;b.x-=ib;b.y-=ib;b.w+=2*ib;b.h+=2*ib;if(!c.isCollected&&checkRectCollision(nr,b)){ol=true;break;}}if(ol)continue;for(const auto&d:g_damageItems){SDL_FRect b=d.rect;b.x-=ib;b.y-=ib;b.w+=2*ib;b.h+=2*ib;if(!d.isCollected&&checkRectCollision(nr,b)){ol=true;break;}}if(ol)continue;g_mysteryItems.push_back(MysteryItem(x,y,iw,ih,{128,0,128,255}));}}
 
 // --- RENDER FUNCTIONS ---
-void renderRoundedButton(SDL_Renderer* renderer, const Button& btn, TTF_Font* font, SDL_Texture* bgTexture, SDL_Color bc, SDL_Color tc) { if(!renderer||!font||!bgTexture)return;SDL_RenderTexture(renderer,bgTexture,nullptr,&btn.rect);SDL_Surface*s=TTF_RenderText_Blended(font,btn.text.c_str(),btn.text.length(),tc);if(!s)return;SDL_Texture*t=SDL_CreateTextureFromSurface(renderer,s);SDL_FRect tr={btn.rect.x+(btn.rect.w-s->w)/2.0f,btn.rect.y+(btn.rect.h-s->h)/2.0f,(float)s->w,(float)s->h};SDL_RenderTexture(renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t); }
+// ✅ MỤC 2: SỬA HÀM NÀY (THÊM isHovered)
+void renderRoundedButton(SDL_Renderer* renderer, const Button& btn, TTF_Font* font, SDL_Texture* bgTexture, SDL_Color bc, SDL_Color tc, bool isHovered) {
+    if(!renderer||!font||!bgTexture)return;
+
+    // ✅ THÊM LOGIC MỚI:
+    // Thay đổi độ sáng/trong suốt của texture nút dựa trên trạng thái hover
+    if (isHovered) {
+        // Sáng lên, rõ nét khi được di chuột qua
+        SDL_SetTextureColorMod(bgTexture, 255, 255, 255); // Màu gốc
+        SDL_SetTextureAlphaMod(bgTexture, 255);         // Rõ nét
+    } else {
+        // Hơi tối đi và mờ đi một chút khi không được di chuột qua
+        SDL_SetTextureColorMod(bgTexture, 200, 200, 200); // Hơi xám/tối
+        SDL_SetTextureAlphaMod(bgTexture, 220);         // Hơi mờ
+    }
+
+    // Vẽ texture nút với các thay đổi ở trên
+    SDL_RenderTexture(renderer,bgTexture,nullptr,&btn.rect);
+
+    // ✅ THÊM: Reset texture mod về bình thường
+    // Việc này RẤT QUAN TRỌNG để không ảnh hưởng đến các lần vẽ khác
+    SDL_SetTextureColorMod(bgTexture, 255, 255, 255);
+    SDL_SetTextureAlphaMod(bgTexture, 255);
+
+    // Phần vẽ chữ (text) bên trên nút giữ nguyên
+    SDL_Surface*s=TTF_RenderText_Blended(font,btn.text.c_str(),btn.text.length(),tc);
+    if(!s)return;
+    SDL_Texture*t=SDL_CreateTextureFromSurface(renderer,s);
+    SDL_FRect tr={btn.rect.x+(btn.rect.w-s->w)/2.0f,btn.rect.y+(btn.rect.h-s->h)/2.0f,(float)s->w,(float)s->h};
+    SDL_RenderTexture(renderer,t,nullptr,&tr);
+    SDL_DestroySurface(s);
+    SDL_DestroyTexture(t);
+}
 bool checkCollision(float x, float y, const SDL_FRect& rect) { return (x>=rect.x&&x<rect.x+rect.w&&y>=rect.y&&y<rect.y+rect.h); }
 
 // --- DAMAGE ITEM UPDATE FUNCTION ---
@@ -200,10 +232,10 @@ void drawGameWorld() {
     if(g_backgroundTexture&&g_bgWidth>0&&g_bgHeight>0){float p=0.5f,s=(float)SCREEN_HEIGHT/g_bgHeight,sw=g_bgWidth*s,o=fmod(g_cameraX*p,sw); SDL_FRect r1={-o,0,sw,(float)SCREEN_HEIGHT},r2={-o+sw,0,sw,(float)SCREEN_HEIGHT}; SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r1); SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r2); }
     for(const auto&o:g_obstacles){ SDL_FRect r={o.rect.x-g_cameraX,o.rect.y,o.rect.w,o.rect.h}; if(g_obstacleTexture)SDL_RenderTexture(g_renderer,g_obstacleTexture,nullptr,&r); else{/*Fallback*/}}
 
+    // ✅ MỤC 1: ĐÃ THÊM HIỆU ỨNG NHẤP NHÔ
     for(const auto&i:g_collectibles){
         if(!i.isCollected){
             SDL_FRect r={i.rect.x-g_cameraX,i.rect.y,i.rect.w,i.rect.h};
-            // ✅ THÊM: Hiệu ứng nhấp nhô
             r.y += sinf((float)SDL_GetTicks() / 350.0f + i.rect.x) * 5.0f;
             if(g_collectibleTexture)SDL_RenderTexture(g_renderer,g_collectibleTexture,nullptr,&r);
             else{/*Fallback*/}
@@ -218,10 +250,10 @@ void drawGameWorld() {
         }
     }
 
+    // ✅ MỤC 1: ĐÃ THÊM HIỆU ỨNG NHẤP NHÔ
     for(const auto&i:g_mysteryItems){
         if(!i.isCollected){
             SDL_FRect r={i.rect.x-g_cameraX,i.rect.y,i.rect.w,i.rect.h};
-            // ✅ THÊM: Hiệu ứng nhấp nhô
             r.y += sinf((float)SDL_GetTicks() / 350.0f + i.rect.x) * 5.0f;
             if(g_mysteryItemTexture)SDL_RenderTexture(g_renderer,g_mysteryItemTexture,nullptr,&r);
             else{/*Fallback*/}
@@ -259,7 +291,56 @@ void renderSceneFinish() { drawGameWorld(); /* Overlay FINISH text */ SDL_Color 
 void renderSceneGameOver() { drawGameWorld(); /* Overlay GAME OVER text */ SDL_Color tc={255,255,255,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; s=TTF_RenderText_Blended(g_font,"GAME OVER",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,150,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} std::string st="Vat pham: "+std::to_string(g_totalItemCount);s=TTF_RenderText_Blended(g_smallFont,st.c_str(),st.length(),tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,300,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} s=TTF_RenderText_Blended(g_smallFont,"Bam ESC de ve Menu",0,tc);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={SCREEN_WIDTH/2.0f-s->w/2.0f,400,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
 void renderSceneResume() { drawGameWorld(); }
 void renderSceneScore() { SDL_SetRenderDrawColor(g_renderer, 30, 30, 70, 255); SDL_RenderClear(g_renderer); SDL_Color tc1={255,215,0,255}, tc2={255,255,255,255}, tc3={180,180,180,255}; SDL_Surface*s=nullptr; SDL_Texture*t=nullptr; SDL_FRect tr; s=TTF_RenderText_Blended(g_font,"HIGH SCORES",0,tc1);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={(SCREEN_WIDTH-(float)s->w)/2.0f,50,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} float y=150.0f; int r=1; if(g_highScores.empty()){s=TTF_RenderText_Blended(g_smallFont,"No scores yet. Go play!",0,tc3);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={(SCREEN_WIDTH-(float)s->w)/2.0f,y,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}}else{for(int sc:g_highScores){std::string sl=std::to_string(r)+".   "+std::to_string(sc);s=TTF_RenderText_Blended(g_smallFont,sl.c_str(),sl.length(),tc2);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={(SCREEN_WIDTH/2.0f)-100.0f,y,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);}y+=35.0f;r++;if(r>10)break;}}s=TTF_RenderText_Blended(g_smallFont,"Press ESC for Menu",0,tc3);if(s){t=SDL_CreateTextureFromSurface(g_renderer,s);tr={(SCREEN_WIDTH-(float)s->w)/2.0f,SCREEN_HEIGHT-60.0f,(float)s->w,(float)s->h};SDL_RenderTexture(g_renderer,t,nullptr,&tr);SDL_DestroySurface(s);SDL_DestroyTexture(t);} }
-void renderSceneMenu(Uint32 currentTime) { if(g_backgroundTexture&&g_bgWidth>0&&g_bgHeight>0){float scrollSpeed=30.0f;float dt=0.0f; if (g_lastTime != 0 && currentTime > g_lastTime) { dt = (currentTime - g_lastTime) / 1000.0f; } if(dt>0.05f)dt=0.05f; g_menuBgOffsetX+=scrollSpeed*dt; float s=(float)SCREEN_HEIGHT/g_bgHeight,sw=g_bgWidth*s,o=fmod(g_menuBgOffsetX,sw);SDL_FRect r1={-o,0,sw,(float)SCREEN_HEIGHT},r2={-o+sw,0,sw,(float)SCREEN_HEIGHT};SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r1);SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r2);} else {SDL_SetRenderDrawColor(g_renderer,173,216,230,255);SDL_RenderClear(g_renderer);} if(g_logoTexture){if(g_alpha<255&&!g_shrinking){g_alpha=(Uint8)SDL_min(g_alpha+3,255);SDL_SetTextureAlphaMod(g_logoTexture,g_alpha);}else{g_shrinking=true;}if(g_shrinking){if(g_logoRect.w>100){g_logoRect.w*=0.98f;g_logoRect.h*=0.98f;g_logoRect.x=(SCREEN_WIDTH-g_logoRect.w)/2.0f;g_logoRect.y=50.0f;}else{g_logoRect.x=20.0f;g_logoRect.y=20.0f;g_logoRect.w=100.0f;g_logoRect.h=100.0f;}}SDL_RenderTexture(g_renderer,g_logoTexture,nullptr,&g_logoRect);} if(g_player){float lw=100,lh=120;SDL_FRect lr={150.0f,SCREEN_HEIGHT-lh-50.0f,lw,lh};lr.y+=sinf((float)currentTime/500.0f)*5.0f;SDL_RenderTexture(g_renderer,g_player,nullptr,&lr);} g_buttons[0].rect={350,200,180,80};g_buttons[1].rect={350,300,180,80};g_buttons[2].rect={350,400,180,80}; if(currentTime-g_startTime>2000){ SDL_Color bc={255,105,180,200},tc={80,80,80,255}; renderRoundedButton(g_renderer,g_buttons[0],g_font,g_buttonTexture,bc,tc); if (g_gameInProgress) { SDL_Color resume_bc = {100, 200, 255, 220}; SDL_Color resume_tc = {255, 255, 255, 255}; Uint8 alpha = 128 + (Uint8)((sinf((float)currentTime / 200.0f) + 1.0f) * 64); SDL_SetTextureAlphaMod(g_buttonTexture, alpha); renderRoundedButton(g_renderer,g_buttons[1],g_font,g_buttonTexture,resume_bc,resume_tc); SDL_SetTextureAlphaMod(g_buttonTexture, 255); } else { renderRoundedButton(g_renderer,g_buttons[1],g_font,g_buttonTexture,bc,tc); } renderRoundedButton(g_renderer,g_buttons[2],g_font,g_buttonTexture,bc,tc); } }
+
+// ✅ MỤC 2: SỬA HÀM NÀY
+void renderSceneMenu(Uint32 currentTime) {
+    // ... (Phần code vẽ background, logo, player giữ nguyên) ...
+    if(g_backgroundTexture&&g_bgWidth>0&&g_bgHeight>0){float scrollSpeed=30.0f;float dt=0.0f; if (g_lastTime != 0 && currentTime > g_lastTime) { dt = (currentTime - g_lastTime) / 1000.0f; } if(dt>0.05f)dt=0.05f; g_menuBgOffsetX+=scrollSpeed*dt; float s=(float)SCREEN_HEIGHT/g_bgHeight,sw=g_bgWidth*s,o=fmod(g_menuBgOffsetX,sw);SDL_FRect r1={-o,0,sw,(float)SCREEN_HEIGHT},r2={-o+sw,0,sw,(float)SCREEN_HEIGHT};SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r1);SDL_RenderTexture(g_renderer,g_backgroundTexture,nullptr,&r2);} else {SDL_SetRenderDrawColor(g_renderer,173,216,230,255);SDL_RenderClear(g_renderer);}
+    if(g_logoTexture){if(g_alpha<255&&!g_shrinking){g_alpha=(Uint8)SDL_min(g_alpha+3,255);SDL_SetTextureAlphaMod(g_logoTexture,g_alpha);}else{g_shrinking=true;}if(g_shrinking){if(g_logoRect.w>100){g_logoRect.w*=0.98f;g_logoRect.h*=0.98f;g_logoRect.x=(SCREEN_WIDTH-g_logoRect.w)/2.0f;g_logoRect.y=50.0f;}else{g_logoRect.x=20.0f;g_logoRect.y=20.0f;g_logoRect.w=100.0f;g_logoRect.h=100.0f;}}SDL_RenderTexture(g_renderer,g_logoTexture,nullptr,&g_logoRect);}
+    if(g_player){float lw=100,lh=120;SDL_FRect lr={150.0f,SCREEN_HEIGHT-lh-50.0f,lw,lh};lr.y+=sinf((float)currentTime/500.0f)*5.0f;SDL_RenderTexture(g_renderer,g_player,nullptr,&lr);}
+
+    g_buttons[0].rect={350,200,180,80};
+    g_buttons[1].rect={350,300,180,80};
+    g_buttons[2].rect={350,400,180,80};
+
+    if(currentTime-g_startTime>2000){
+        // ✅ THÊM: Lấy vị trí chuột
+        float mouseX, mouseY;
+        SDL_GetMouseState(&mouseX, &mouseY);
+
+        SDL_Color bc={255,105,180,200}, tc={80,80,80,255};
+
+        // --- Vẽ Nút Play ---
+        // ✅ SỬA: Kiểm tra hover và truyền vào hàm
+        bool hoverPlay = checkCollision(mouseX, mouseY, g_buttons[0].rect);
+        renderRoundedButton(g_renderer, g_buttons[0], g_font, g_buttonTexture, bc, tc, hoverPlay);
+
+        // --- Vẽ Nút Resume ---
+        // ✅ SỬA: Kiểm tra hover trước
+        bool hoverResume = checkCollision(mouseX, mouseY, g_buttons[1].rect);
+        if (g_gameInProgress) {
+            SDL_Color resume_bc = {100, 200, 255, 220};
+            SDL_Color resume_tc = {255, 255, 255, 255};
+
+            // ✅ SỬA: Chỉ nhấp nháy khi KHÔNG hover
+            if (!hoverResume) {
+                Uint8 alpha = 128 + (Uint8)((sinf((float)currentTime / 200.0f) + 1.0f) * 64);
+                SDL_SetTextureAlphaMod(g_buttonTexture, alpha);
+            }
+
+            renderRoundedButton(g_renderer, g_buttons[1], g_font, g_buttonTexture, resume_bc, resume_tc, hoverResume); // Truyền trạng thái hover
+            SDL_SetTextureAlphaMod(g_buttonTexture, 255);
+        } else {
+            renderRoundedButton(g_renderer, g_buttons[1], g_font, g_buttonTexture, bc, tc, hoverResume); // Truyền trạng thái hover
+        }
+
+        // --- Vẽ Nút Score ---
+        // ✅ SỬA: Kiểm tra hover và truyền vào hàm
+        bool hoverScore = checkCollision(mouseX, mouseY, g_buttons[2].rect);
+        renderRoundedButton(g_renderer, g_buttons[2], g_font, g_buttonTexture, bc, tc, hoverScore);
+    }
+}
+
 
 // --- RESET FUNCTION ---
 void resetPlayer() {
